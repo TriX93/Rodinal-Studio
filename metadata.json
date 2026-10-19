@@ -1,0 +1,6 @@
+{
+  "name": "Nikon Darkroom Lab - RAW Film Negative Inverter & Archiver",
+  "description": "Professional client-side film negative inversion and color grading studio for Nikon RAW exposures (.NEF/NRW/DNG). Powered by WebGPU and WebAssembly with 16-bit archival TIFF and high-resolution JPEG export.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

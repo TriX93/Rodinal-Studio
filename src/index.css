@@ -1,0 +1,47 @@
+@import "tailwindcss";
+
+@layer utilities {
+  /* Darkroom custom range inputs */
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    background: #26262a;
+    border-radius: 9999px;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #f59e0b;
+    cursor: pointer;
+    border: 1.5px solid #09090b;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    transition: transform 0.1s ease;
+  }
+
+  input[type="range"]::-webkit-slider-thumb:hover {
+    transform: scale(1.25);
+  }
+
+  /* Thin darkroom scrollbars */
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: #0d0d11;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: #27272e;
+    border-radius: 3px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: #3e3e48;
+  }
+}
