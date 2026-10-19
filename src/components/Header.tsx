@@ -1,5 +1,5 @@
 import React from 'react';
-import { Download, Cpu, Sparkles, Layers, Info, Monitor } from 'lucide-react';
+import { Download, Cpu, Sparkles, Layers, Info, Monitor, Flame, Scale } from 'lucide-react';
 import { HardwareEngineState, getElectronAPI } from '../types/film';
 
 interface HeaderProps {
@@ -9,6 +9,8 @@ interface HeaderProps {
   setActiveTab: (tab: string) => void;
   onOpenInfo: () => void;
   onOpenDesktop: () => void;
+  onOpenLicensing: () => void;
+  onOpenDurstDarkroom: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -17,7 +19,9 @@ export const Header: React.FC<HeaderProps> = ({
   activeTab,
   setActiveTab,
   onOpenInfo,
-  onOpenDesktop
+  onOpenDesktop,
+  onOpenLicensing,
+  onOpenDurstDarkroom
 }) => {
   const isDesktop = Boolean(getElectronAPI()?.isDesktop);
   return (
@@ -73,12 +77,30 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
 
         <button
+          onClick={onOpenDurstDarkroom}
+          className="hover:text-amber-300 text-amber-400 transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 px-2 py-0.5 rounded bg-red-950/40 border border-red-900/60 font-semibold"
+          title="Open Durst Dichroic Enlarger Darkroom Simulator"
+        >
+          <Flame className="w-3.5 h-3.5 text-red-400 animate-pulse" />
+          <span>Durst Darkroom</span>
+        </button>
+
+        <button
+          onClick={onOpenLicensing}
+          className="hover:text-white transition-colors whitespace-nowrap shrink-0 flex items-center gap-1 text-neutral-400 hover:text-neutral-200"
+          title="Open Source Licenses & Asset Attribution"
+        >
+          <Scale className="w-3.5 h-3.5" />
+          <span>Licensing</span>
+        </button>
+
+        <button
           onClick={onOpenInfo}
           className="hover:text-white transition-colors whitespace-nowrap shrink-0 flex items-center gap-1 text-neutral-500 hover:text-neutral-300"
           title="Pipeline Architecture & Specs"
         >
           <Info className="w-3.5 h-3.5" />
-          <span>Engine Specs</span>
+          <span>Specs</span>
         </button>
 
         <button
@@ -89,7 +111,7 @@ export const Header: React.FC<HeaderProps> = ({
           title="Desktop App (Windows / macOS / Linux)"
         >
           <Monitor className="w-3.5 h-3.5" />
-          <span>{isDesktop ? 'Desktop Native' : 'Desktop App'}</span>
+          <span>{isDesktop ? 'Desktop Native' : 'Desktop'}</span>
         </button>
       </nav>
 

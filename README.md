@@ -21,6 +21,7 @@ Powered by **WebGPU (WGSL compute/fragment shaders)** and **WebAssembly (linear 
 - **10 Classic Film Emulation Profiles**: Kodak Portra 400, Portra 160, Gold 200, Ektar 100, Fujifilm Pro 400H, Superia X-TRA 400, CineStill 800T, Kodak Tri-X 400, Ilford HP5 Plus, and Fujifilm Neopan Acros 100.
 - **Laboratory Inspection Tools**: Split before/after comparison slider, 400% 1:1 grain loupe, and shadow crush / highlight blow-out clipping indicators.
 - **Carrier Alignment & Orientation**: 90° rotation, Flip Horizontal (emulsion-side mirror correction), and Flip Vertical (inverted carrier correction).
+- **Durst Laborator Enlarger Simulator**: Interactive analog darkroom printing simulation featuring a Durst CLS 501 Dichroic mixing head (Yellow, Magenta, Cyan filtration dials from 0–130), Ilford Multigrade contrast grade selector (Grade 00 through 5), aperture click stops (f/2.8 to f/16), optical easel projection, test strip generator, Paterson critical grain scope, red safety swing arm, digital LED exposure timer with Web Audio relay clicks and ticks, 3-tray wet chemistry bench (Dektol Developer, Stop Bath, Rapid Fixer) with fluid agitation ripples, paper fogging simulation, and archival gelatin silver master print export.
 - **16-Bit Archival TIFF 6.0 Exporter**: True uncompressed 48-bit RGB TIFF masters with custom DPI tags (300, 600, or 1200 DPI archival standards), Nikon camera metadata, and batch film roll export.
 
 ---

@@ -1,17 +1,19 @@
 import React from 'react';
 import { HardwareEngineState } from '../types/film';
-import { X, Cpu, Zap, Shield, FileCode2, Binary } from 'lucide-react';
+import { X, Cpu, Zap, Shield, FileCode2, Binary, Scale, Flame } from 'lucide-react';
 
 interface InfoModalProps {
   isOpen: boolean;
   onClose: () => void;
   hardwareState: HardwareEngineState;
+  onOpenLicensing?: () => void;
 }
 
 export const InfoModal: React.FC<InfoModalProps> = ({
   isOpen,
   onClose,
-  hardwareState
+  hardwareState,
+  onOpenLicensing
 }) => {
   if (!isOpen) return null;
 
@@ -95,6 +97,34 @@ export const InfoModal: React.FC<InfoModalProps> = ({
             <p className="text-neutral-400 leading-relaxed text-[11px]">
               Exported masters are encoded in uncompressed 48-bit RGB (16 bits per channel, 0 to 65535 discrete tonal levels per color channel), adhering to the Library of Congress and FADGI 4-star archival digitizing standards with embedded DPI tags (300/600/1200 DPI) and Nikon camera metadata.
             </p>
+          </div>
+
+          {/* Open Source Licensing & Asset Attribution */}
+          <div className="bg-neutral-950 border border-neutral-800 rounded p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 font-semibold text-neutral-200">
+                <Scale className="w-4 h-4 text-amber-400" />
+                <span>Licensing &amp; CC0 Benchmark Assets</span>
+              </div>
+              <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                Apache-2.0 &amp; CC0 1.0
+              </span>
+            </div>
+            <p className="text-neutral-400 text-[11px] leading-relaxed">
+              Rodinal Studio application code is licensed under Apache 2.0. All bundled demonstration negative calibration scans are dedicated to the public domain (CC0 1.0 Universal) for personal, academic, and commercial testing.
+            </p>
+            {onOpenLicensing && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onOpenLicensing();
+                }}
+                className="py-1 px-2.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white text-[10.5px] font-mono transition-colors flex items-center gap-1.5"
+              >
+                <Scale className="w-3 h-3 text-amber-400" />
+                <span>Open Full Legal Notice &amp; Attribution</span>
+              </button>
+            )}
           </div>
 
           {/* Client-Side Guarantee */}

@@ -1,19 +1,21 @@
 import React, { useRef } from 'react';
 import { FilmScanItem } from '../types/film';
-import { Plus, Camera, FileCheck } from 'lucide-react';
+import { Plus, Camera, FileCheck, Scale } from 'lucide-react';
 
 interface FilmStripProps {
   items: FilmScanItem[];
   selectedId: string;
   onSelect: (id: string) => void;
   onFileUpload: (files: FileList) => void;
+  onOpenLicensing?: () => void;
 }
 
 export const FilmStrip: React.FC<FilmStripProps> = ({
   items,
   selectedId,
   onSelect,
-  onFileUpload
+  onFileUpload,
+  onOpenLicensing
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -103,8 +105,19 @@ export const FilmStrip: React.FC<FilmStripProps> = ({
         })}
       </div>
 
-      <div className="text-[11px] text-neutral-600 font-mono shrink-0 pl-2">
-        {items.length} RAW frames loaded
+      <div className="flex items-center gap-2 text-[11px] text-neutral-500 font-mono shrink-0 pl-2">
+        <span>{items.length} RAW frames</span>
+        <span>·</span>
+        {onOpenLicensing && (
+          <button
+            onClick={onOpenLicensing}
+            className="text-neutral-500 hover:text-amber-400 transition-colors flex items-center gap-1 cursor-pointer"
+            title="View Demo Scans CC0 License and Attribution"
+          >
+            <Scale className="w-3 h-3 text-amber-400" />
+            <span>CC0 Test Assets</span>
+          </button>
+        )}
       </div>
     </div>
   );

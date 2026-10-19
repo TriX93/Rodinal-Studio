@@ -2,7 +2,7 @@ import React from 'react';
 import { FilmScanItem, InversionSettings } from '../types/film';
 import { FILM_PRESETS } from '../engine/presets/filmPresets';
 import { CurvesEditor } from './CurvesEditor';
-import { Pipette, Sparkles, Sliders, RefreshCw, Layers, Film, Tag, Camera, RotateCw, FlipHorizontal, FlipVertical } from 'lucide-react';
+import { Pipette, Sparkles, Sliders, RefreshCw, Layers, Film, Tag, Camera, RotateCw, FlipHorizontal, FlipVertical, Scale, Flame } from 'lucide-react';
 
 interface SidebarControlsProps {
   scan: FilmScanItem;
@@ -12,6 +12,8 @@ interface SidebarControlsProps {
   setActiveTab: (tab: string) => void;
   isEyedropperActive: boolean;
   setIsEyedropperActive: (active: boolean) => void;
+  onOpenLicensing?: () => void;
+  onOpenDurstDarkroom?: () => void;
 }
 
 export const SidebarControls: React.FC<SidebarControlsProps> = ({
@@ -21,7 +23,9 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
   activeTab,
   setActiveTab,
   isEyedropperActive,
-  setIsEyedropperActive
+  setIsEyedropperActive,
+  onOpenLicensing,
+  onOpenDurstDarkroom
 }) => {
   // Apply Film Preset
   const handleSelectPreset = (presetId: string) => {
@@ -657,6 +661,31 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
                 }}
                 className="w-full bg-neutral-900 border border-neutral-800 rounded px-2.5 py-1.5 text-xs text-white focus:border-amber-400 focus:outline-none resize-none"
               />
+            </div>
+
+            {/* Licensing & Legal Notice */}
+            <div className="bg-neutral-900/80 border border-neutral-800 rounded-lg p-3 space-y-2 pt-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 font-semibold text-white text-[11px]">
+                  <Scale className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Licensing &amp; Open Source</span>
+                </div>
+                <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                  Apache-2.0 · CC0
+                </span>
+              </div>
+              <p className="text-[10.5px] text-neutral-400 leading-relaxed">
+                Rodinal Studio source code is free under Apache-2.0. Demo Nikon negative scans are dedicated to CC0 Public Domain.
+              </p>
+              {onOpenLicensing && (
+                <button
+                  onClick={onOpenLicensing}
+                  className="w-full py-1.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white text-[11px] font-mono transition-colors flex items-center justify-center gap-1.5 shadow-sm"
+                >
+                  <Scale className="w-3 h-3 text-amber-400" />
+                  <span>View Licensing &amp; Legal Attribution</span>
+                </button>
+              )}
             </div>
           </div>
         )}

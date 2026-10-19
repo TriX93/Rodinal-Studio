@@ -14,6 +14,8 @@ import { HistogramPanel } from './components/HistogramPanel';
 import { ExportModal } from './components/ExportModal';
 import { InfoModal } from './components/InfoModal';
 import { DesktopModal } from './components/DesktopModal';
+import { LicensingModal } from './components/LicensingModal';
+import { DurstEnlargerMode } from './components/DurstEnlargerMode';
 
 export default function App() {
   const [filmScans, setFilmScans] = useState<FilmScanItem[]>(() => NefParser.getDefaultRoll());
@@ -23,6 +25,8 @@ export default function App() {
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
   const [isInfoModalOpen, setIsInfoModalOpen] = useState<boolean>(false);
   const [isDesktopModalOpen, setIsDesktopModalOpen] = useState<boolean>(false);
+  const [isLicensingModalOpen, setIsLicensingModalOpen] = useState<boolean>(false);
+  const [isDurstDarkroomMode, setIsDurstDarkroomMode] = useState<boolean>(false);
 
   // Hardware Engine State
   const [hardwareState, setHardwareState] = useState<HardwareEngineState>({
@@ -195,6 +199,8 @@ export default function App() {
         setActiveTab={setActiveTab}
         onOpenInfo={() => setIsInfoModalOpen(true)}
         onOpenDesktop={() => setIsDesktopModalOpen(true)}
+        onOpenLicensing={() => setIsLicensingModalOpen(true)}
+        onOpenDurstDarkroom={() => setIsDurstDarkroomMode(true)}
       />
 
       {/* Main Workspace */}
@@ -228,6 +234,8 @@ export default function App() {
               setActiveTab={setActiveTab}
               isEyedropperActive={isEyedropperActive}
               setIsEyedropperActive={setIsEyedropperActive}
+              onOpenLicensing={() => setIsLicensingModalOpen(true)}
+              onOpenDurstDarkroom={() => setIsDurstDarkroomMode(true)}
             />
           </div>
         </div>
@@ -239,6 +247,7 @@ export default function App() {
         selectedId={selectedScanId}
         onSelect={setSelectedScanId}
         onFileUpload={handleFileUpload}
+        onOpenLicensing={() => setIsLicensingModalOpen(true)}
       />
 
       {/* 16-Bit Archival Export Modal */}
@@ -254,6 +263,7 @@ export default function App() {
         isOpen={isInfoModalOpen}
         onClose={() => setIsInfoModalOpen(false)}
         hardwareState={hardwareState}
+        onOpenLicensing={() => setIsLicensingModalOpen(true)}
       />
 
       {/* Cross-Platform Desktop App Modal (Windows / macOS / Linux) */}
@@ -261,6 +271,20 @@ export default function App() {
         isOpen={isDesktopModalOpen}
         onClose={() => setIsDesktopModalOpen(false)}
       />
+
+      {/* Open Source Licensing & Asset Attribution Modal */}
+      <LicensingModal
+        isOpen={isLicensingModalOpen}
+        onClose={() => setIsLicensingModalOpen(false)}
+      />
+
+      {/* Interactive Durst Enlarger Darkroom Mode */}
+      {isDurstDarkroomMode && (
+        <DurstEnlargerMode
+          scan={activeScan}
+          onExit={() => setIsDurstDarkroomMode(false)}
+        />
+      )}
     </div>
   );
 }
