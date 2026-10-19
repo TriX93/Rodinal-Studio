@@ -13,6 +13,7 @@ import { SidebarControls } from './components/SidebarControls';
 import { HistogramPanel } from './components/HistogramPanel';
 import { ExportModal } from './components/ExportModal';
 import { InfoModal } from './components/InfoModal';
+import { DesktopModal } from './components/DesktopModal';
 
 export default function App() {
   const [filmScans, setFilmScans] = useState<FilmScanItem[]>(() => NefParser.getDefaultRoll());
@@ -21,6 +22,7 @@ export default function App() {
   const [isEyedropperActive, setIsEyedropperActive] = useState<boolean>(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
   const [isInfoModalOpen, setIsInfoModalOpen] = useState<boolean>(false);
+  const [isDesktopModalOpen, setIsDesktopModalOpen] = useState<boolean>(false);
 
   // Hardware Engine State
   const [hardwareState, setHardwareState] = useState<HardwareEngineState>({
@@ -192,6 +194,7 @@ export default function App() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         onOpenInfo={() => setIsInfoModalOpen(true)}
+        onOpenDesktop={() => setIsDesktopModalOpen(true)}
       />
 
       {/* Main Workspace */}
@@ -251,6 +254,12 @@ export default function App() {
         isOpen={isInfoModalOpen}
         onClose={() => setIsInfoModalOpen(false)}
         hardwareState={hardwareState}
+      />
+
+      {/* Cross-Platform Desktop App Modal (Windows / macOS / Linux) */}
+      <DesktopModal
+        isOpen={isDesktopModalOpen}
+        onClose={() => setIsDesktopModalOpen(false)}
       />
     </div>
   );

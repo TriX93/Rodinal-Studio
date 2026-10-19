@@ -116,3 +116,17 @@ export interface ExportConfiguration {
   includeArchivalExif: boolean;
   batchExport: boolean;
 }
+
+export interface ElectronAPI {
+  isDesktop?: boolean;
+  platform?: 'win32' | 'darwin' | 'linux';
+  openRawFile?: () => Promise<Array<{ filename: string; filePath: string; size: number; buffer: ArrayBuffer }> | null>;
+  saveMasterFile?: (defaultFilename: string, arrayBuffer: ArrayBuffer) => Promise<{ success: boolean; filePath?: string; canceled?: boolean }>;
+}
+
+export function getElectronAPI(): ElectronAPI | undefined {
+  if (typeof window !== 'undefined' && 'electronAPI' in window) {
+    return (window as unknown as { electronAPI?: ElectronAPI }).electronAPI;
+  }
+  return undefined;
+}

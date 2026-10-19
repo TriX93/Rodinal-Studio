@@ -90,11 +90,27 @@ cd rodinal-studio
 # Install dependencies
 npm install
 
-# Start development server
+# Option A: Start Web browser version
 npm run dev
+
+# Option B: Launch Native Desktop App (Windows, macOS, Linux)
+npm run desktop
+
+# Option C: Build standalone native distribution binaries
+npm run desktop:dist
 ```
 
-Visit `http://localhost:3000` in your browser.
+---
+
+## Desktop Application (Windows · macOS · Linux)
+
+Rodinal Studio runs as a native desktop application powered by **Electron 44+** with hardware-accelerated WebGPU/Vulkan flags:
+
+- **Windows 10 / 11** (x64 / ARM64): Native OS file picker and high-DPI display calibration.
+- **macOS** (Apple Silicon M1–M4 & Intel): Native macOS menu bar shortcuts (<kbd>Cmd+O</kbd>, <kbd>Cmd+E</kbd>, <kbd>Cmd+R</kbd>).
+- **Linux** (Ubuntu, Fedora, Arch, Debian): AppImage and native window manager integration.
+
+Running as a desktop application unlocks direct local disk access for multi-gigabyte film roll batches without browser upload limits.
 
 ---
 

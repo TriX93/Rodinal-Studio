@@ -1,6 +1,6 @@
 import React from 'react';
-import { Download, Cpu, Sparkles, Layers, Info } from 'lucide-react';
-import { HardwareEngineState } from '../types/film';
+import { Download, Cpu, Sparkles, Layers, Info, Monitor } from 'lucide-react';
+import { HardwareEngineState, getElectronAPI } from '../types/film';
 
 interface HeaderProps {
   hardwareState: HardwareEngineState;
@@ -8,6 +8,7 @@ interface HeaderProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
   onOpenInfo: () => void;
+  onOpenDesktop: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -15,8 +16,10 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenExport,
   activeTab,
   setActiveTab,
-  onOpenInfo
+  onOpenInfo,
+  onOpenDesktop
 }) => {
+  const isDesktop = Boolean(getElectronAPI()?.isDesktop);
   return (
     <header className="flex items-center justify-between gap-8 px-6 py-3.5 bg-neutral-950 border-b border-neutral-800/80 text-neutral-100 select-none z-30">
       {/* Zone 1: Single text element wordmark */}
@@ -76,6 +79,17 @@ export const Header: React.FC<HeaderProps> = ({
         >
           <Info className="w-3.5 h-3.5" />
           <span>Engine Specs</span>
+        </button>
+
+        <button
+          onClick={onOpenDesktop}
+          className={`hover:text-white transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+            isDesktop ? 'text-emerald-400 font-semibold' : 'text-neutral-400 hover:text-white'
+          }`}
+          title="Desktop App (Windows / macOS / Linux)"
+        >
+          <Monitor className="w-3.5 h-3.5" />
+          <span>{isDesktop ? 'Desktop Native' : 'Desktop App'}</span>
         </button>
       </nav>
 
