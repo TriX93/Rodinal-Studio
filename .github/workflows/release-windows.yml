@@ -1,0 +1,67 @@
+name: Release Windows app
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version (for example, 1.2.3)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate version and tag
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          if ($env:RELEASE_VERSION -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$') {
+            throw "Version must be valid SemVer without a leading v."
+          }
+          $tag = "v$env:RELEASE_VERSION"
+          if (git tag --list $tag) {
+            throw "Tag $tag already exists. Choose a new version."
+          }
+
+      - name: Install dependencies
+        run: npm install --no-package-lock --no-audit --no-fund
+
+      - name: Set app version
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: npm version $env:RELEASE_VERSION --no-git-tag-version --allow-same-version
+
+      - name: Build Windows installer
+        run: |
+          npm run build
+          npx --yes electron-builder@26.0.12 --win nsis --x64 --publish never
+
+      - name: Publish GitHub release and tag
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: Rodinal Studio v${{ inputs.version }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: release/*.exe

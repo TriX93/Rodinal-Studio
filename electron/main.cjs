@@ -35,7 +35,7 @@ function createWindow() {
   const devServerUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:3000';
   const prodPath = path.join(__dirname, '../dist/index.html');
 
-  if (fs.existsSync(prodPath) && process.env.NODE_ENV === 'production') {
+  if (fs.existsSync(prodPath) && (app.isPackaged || process.env.NODE_ENV === 'production')) {
     mainWindow.loadFile(prodPath);
   } else {
     mainWindow.loadURL(devServerUrl).catch(() => {

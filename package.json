@@ -36,5 +36,23 @@
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
     "typescript": "^7.0.2"
+  },
+  "build": {
+    "appId": "com.rodinal.studio",
+    "productName": "Rodinal Studio",
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-Windows-${arch}.${ext}"
+    }
   }
 }
