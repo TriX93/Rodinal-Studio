@@ -29,7 +29,8 @@ import {
   ArrowRight,
   ArrowDown,
   FlaskConical,
-  HelpCircle
+  HelpCircle,
+  Lightbulb
 } from 'lucide-react';
 import { TiffWriter } from '../engine/export/tiffWriter';
 
@@ -404,7 +405,8 @@ const ACTION_FEEDBACK: Record<string, { label: string; effect: string; tone: 'co
   tiltY: { label: 'Tilt orizzontale', effect: 'Inclina l\'asse di lato: le righe della proiezione si sfasano (keystone orizzontale).', tone: 'optic' },
   shiftX: { label: 'Shift orizzontale', effect: 'Sposta la proiezione di lato senza toccare la colonna: utile per ricomporre il taglio.', tone: 'optic' },
   shiftY: { label: 'Shift verticale', effect: 'Sposta la proiezione in alto o in basso senza muovere l\'ingranditore.', tone: 'optic' },
-  headReset: { label: 'Testa azzerata', effect: 'Tilt e shift tornano neutri: proiezione di nuovo rettangolare e centrata.', tone: 'optic' }
+  headReset: { label: 'Testa azzerata', effect: 'Tilt e shift tornano neutri: proiezione di nuovo rettangolare e centrata.', tone: 'optic' },
+  lampManual: { label: 'Lampada in composizione', effect: 'Accendi la lampada per comporre e mettere a fuoco: la luce proietta il negativo senza esporre la carta.', tone: 'bright' }
 };
 
 const TONE_COLOUR: Record<string, string> = {
@@ -465,6 +467,7 @@ const TutorialPanel: React.FC<TutorialPanelProps> = ({
             <li><strong>Colonna</strong> — non zooma, cambia solo la luce totale.</li>
             <li><strong>Tilt &amp; shift</strong> — inclina o sposta la testa: la proiezione si deforma a trapezio o si decentra.</li>
             <li><strong>Nessuna carta</strong> — spegni la carta per comporre sulla baseboard nuda senza consumare fogli.</li>
+            <li><strong>Lampada in composizione</strong> — accendila a mano: proietta il negativo per inquadrare e mettere a fuoco, senza far partire il timer e senza esporre.</li>
           </ul>
         </>
       )
@@ -746,6 +749,11 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
   const [timerDuration, setTimerDuration] = useState<number>(6.5); // seconds
   const [timeRemaining, setTimeRemaining] = useState<number>(0);
   const [isLampOn, setIsLampOn] = useState<boolean>(false);
+  /**
+   * The enlarger lamp held on by hand, with the timer idle. This is how you
+   * light the negative up to compose and focus; it never records exposure.
+   */
+  const [isLampManualOn, setIsLampManualOn] = useState<boolean>(false);
   const [exposureHistorySeconds, setExposureHistorySeconds] = useState<number>(0);
 
   // Developing Tray Simulation (Wet Bench)
@@ -878,12 +886,14 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
 
   // Handle Safelight change & accidental paper fogging under white light
   useEffect(() => {
-    if (safelight === 'white' && devStage !== 'fixed' && devStage !== 'finished') {
+    // Only a sheet actually sitting on the easel can be fogged: with no paper
+    // loaded, white inspection light has nothing to ruin.
+    if (hasPaper && safelight === 'white' && devStage !== 'fixed' && devStage !== 'finished') {
       // If paper is out of black box under white room light before fixing, it fogs!
       setIsPaperFogged(true);
       playSound('fog-alarm');
     }
-  }, [safelight, devStage, playSound]);
+  }, [safelight, devStage, hasPaper, playSound]);
 
   // Durst Dichroic mixing head filters for Multigrade paper
   const applyMultigradeGrade = (grade: MultigradeGrade) => {
@@ -922,6 +932,7 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
   // Trigger exposure via electronic darkroom timer
   const triggerExposure = () => {
     if (isLampOn) return;
+    setIsLampManualOn(false);
     setIsLampOn(true);
     setTimeRemaining(timerDuration);
     playSound('relay-on');
@@ -1102,6 +1113,11 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+
+    // The lamp lights the easel either because the timer is running or because
+    // the user is holding it on by hand to compose. Only the timer records
+    // exposure; the manual switch is purely for looking.
+    const lampIlluminating = isLampOn || isLampManualOn;
 
     const img = new Image();
     img.crossOrigin = 'anonymous';
@@ -1305,7 +1321,7 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
       };
 
       // Projection light simulation
-      if (isLampOn) {
+      if (lampIlluminating) {
         // Enlarger Lamp illuminated
         if (redSafetyFilterSwungIn) {
           // Cast deep ruby red non-actinic safety light
@@ -1582,7 +1598,8 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
     headShiftY,
     hasPaper,
     stripCardPos,
-    isStripRunning
+    isStripRunning,
+    isLampManualOn
   ]);
 
   // Chemical Tray Developer Canvas (Wet Bench Rendering)
@@ -2110,7 +2127,13 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
                 </div>
               </div>
               <button
-                onClick={() => { setHasPaper(!hasPaper); noteAction('paperLoad'); }}
+                onClick={() => {
+                  // Pulling the sheet off the easel takes any fogging with it;
+                  // a fresh sheet comes out of the black box clean.
+                  setHasPaper(!hasPaper);
+                  setIsPaperFogged(false);
+                  noteAction('paperLoad');
+                }}
                 className={`px-3 py-1 rounded text-[11px] font-mono transition-colors ${
                   hasPaper
                     ? 'bg-emerald-500 text-neutral-950 font-bold shadow'
@@ -2407,6 +2430,24 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
               />
             </div>
 
+            {/* Manual lamp: light the negative to compose and focus, no timer */}
+            <button
+              onClick={() => { setIsLampManualOn(!isLampManualOn); noteAction('lampManual'); }}
+              disabled={isLampOn}
+              className={`w-full py-2 rounded-lg font-bold text-[11px] tracking-wider uppercase flex items-center justify-center gap-2 border transition-colors ${
+                isLampOn
+                  ? 'border-neutral-800 bg-neutral-900 text-neutral-600 cursor-not-allowed'
+                  : isLampManualOn
+                    ? 'border-amber-400 bg-amber-400/15 text-amber-300'
+                    : 'border-neutral-800 bg-neutral-900 text-neutral-400 hover:text-white'
+              }`}
+            >
+              <Lightbulb className="w-4 h-4" />
+              <span>
+                {isLampManualOn ? 'Lampada accesa (composizione)' : 'Accendi lampada per comporre'}
+              </span>
+            </button>
+
             {/* EXPOSE FOOT PEDAL BUTTON */}
             <button
               onClick={triggerExposure}
@@ -2481,7 +2522,7 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
           {activeSide === 'projection' ? (
           <div className="flex-1 flex flex-col items-center justify-center p-6 relative overflow-hidden">
           {/* Light cone beam animation */}
-          {isLampOn && (
+          {(isLampOn || isLampManualOn) && (
             <div
               className={`absolute inset-0 pointer-events-none transition-opacity duration-200 ${
                 redSafetyFilterSwungIn
@@ -2512,7 +2553,11 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
                 </div>
               )}
               <div className="px-2.5 py-1 bg-black/80 backdrop-blur-xs rounded text-[10px] font-mono text-neutral-300">
-                {isLampOn ? (redSafetyFilterSwungIn ? 'RED SAFETY PROJECTION' : 'ACTINIC EXPOSURE') : hasPaper ? 'PAPER EASEL (STANDBY)' : 'BASEBOARD (STANDBY)'}
+                {isLampOn
+                  ? (redSafetyFilterSwungIn ? 'RED SAFETY PROJECTION' : 'ACTINIC EXPOSURE')
+                  : isLampManualOn
+                    ? 'PROJECTION LAMP (COMPOSE)'
+                    : hasPaper ? 'PAPER EASEL (STANDBY)' : 'BASEBOARD (STANDBY)'}
               </div>
             </div>
 
