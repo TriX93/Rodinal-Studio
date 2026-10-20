@@ -14,6 +14,7 @@ import {
   Moon,
   Layers,
   ChevronRight,
+  ChevronLeft,
   Play,
   RotateCw,
   Volume2,
@@ -21,7 +22,13 @@ import {
   Waves,
   ZoomIn,
   AlertTriangle,
-  FileCheck
+  FileCheck,
+  Trash2,
+  Maximize2,
+  X,
+  ArrowRight,
+  ArrowDown,
+  FlaskConical
 } from 'lucide-react';
 import { TiffWriter } from '../engine/export/tiffWriter';
 
@@ -42,6 +49,316 @@ interface DodgeBurnZone {
   type: 'dodge' | 'burn';
 }
 
+interface WetBenchProps {
+  devStage: DevelopingStage;
+  devTimeSeconds: number;
+  exposureHistorySeconds: number;
+  isPaperFogged: boolean;
+  isExporting: boolean;
+  exportNotice: string | null;
+  paperCanvasRef: React.RefObject<HTMLCanvasElement | null>;
+  onAdvanceTray: () => void;
+  onRockTank: (tank: 'developer' | 'stop' | 'fix') => void;
+  onTrashPaper: () => void;
+  onInspect: () => void;
+  onExport: () => void;
+  onBackToProjection: () => void;
+}
+
+/**
+ * The wet bench: three trays side by side in the classic order
+ * developer -> stop bath -> fixer. The sheet travels left to right, and each
+ * tank can be rocked on its own. The paper starts at the enlarger, so the
+ * developer tray only fills once a sheet has actually been exposed.
+ */
+const WetBench: React.FC<WetBenchProps> = ({
+  devStage,
+  devTimeSeconds,
+  exposureHistorySeconds,
+  isPaperFogged,
+  isExporting,
+  exportNotice,
+  paperCanvasRef,
+  onAdvanceTray,
+  onRockTank,
+  onTrashPaper,
+  onInspect,
+  onExport,
+  onBackToProjection
+}) => {
+  const isExposed = exposureHistorySeconds > 0;
+
+  // Which tray the sheet currently sits in, if any. An exposed-but-undeveloped
+  // sheet is still on the easel, so it counts as being in no tray yet.
+  const activeTray: 'developer' | 'stop' | 'fix' | 'dry' | null =
+    devStage === 'developing' ? 'developer'
+      : devStage === 'stopped' ? 'stop'
+        : devStage === 'fixed' ? 'fix'
+          : devStage === 'finished' ? 'dry'
+            : null;
+
+  const tanks: Array<{
+    id: 'developer' | 'stop' | 'fix';
+    step: number;
+    name: string;
+    chem: string;
+    accent: string;
+    ring: string;
+    liquid: string;
+    time: string;
+  }> = [
+    {
+      id: 'developer',
+      step: 1,
+      name: 'Sviluppo',
+      chem: 'Kodak Dektol 1:2',
+      accent: 'text-amber-400',
+      ring: 'border-amber-500/70',
+      liquid: 'from-amber-800/70 to-amber-950/80',
+      time: '60s'
+    },
+    {
+      id: 'stop',
+      step: 2,
+      name: 'Arresto',
+      chem: 'Indicatore acido 2%',
+      accent: 'text-yellow-300',
+      ring: 'border-yellow-500/70',
+      liquid: 'from-yellow-800/60 to-yellow-950/80',
+      time: '30s'
+    },
+    {
+      id: 'fix',
+      step: 3,
+      name: 'Fissaggio',
+      chem: 'Rapid Fixer 1:4',
+      accent: 'text-blue-300',
+      ring: 'border-blue-500/70',
+      liquid: 'from-blue-800/60 to-blue-950/80',
+      time: '3 min'
+    }
+  ];
+
+  const nextLabel =
+    devStage === 'unexposed' || devStage === 'exposed' ? 'Sviluppa'
+      : devStage === 'developing' ? 'Arresta'
+        : devStage === 'stopped' ? 'Fissa'
+          : devStage === 'fixed' ? 'Lava & Asciuga'
+            : 'Completato';
+
+  return (
+    <div className="flex-1 flex flex-col overflow-y-auto scrollbar-thin p-6 gap-5">
+      {/* Bench header with the bath temperature readout, as on a real wet bench */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="font-mono text-amber-400 font-bold tracking-wider text-[11px]">
+            BANCO CHIMICO — PROCESSO A 3 VASCHE
+          </span>
+          {isPaperFogged && (
+            <span className="text-[10px] font-mono text-red-400 border border-red-800 rounded px-1.5 py-0.5">
+              FOGGIATA
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-4 font-mono text-[10.5px] text-neutral-400">
+          <span>Bagno: <strong className={activeTray === 'developer' ? 'text-amber-400' : 'text-neutral-300'}>20.0&nbsp;°C</strong></span>
+          <span>Tempo lastra: <strong className="text-amber-400">{devTimeSeconds}s</strong></span>
+          <span className="uppercase">
+            Fase: <strong className="text-white">{devStage}</strong>
+          </span>
+        </div>
+      </div>
+
+      {/* The three tanks, side by side, with arrows showing paper travel */}
+      <div className="flex items-stretch justify-center gap-1">
+        {tanks.map((tank, i) => {
+          const isActive = activeTray === tank.id;
+          const isDone =
+            (tank.id === 'developer' && ['stopped', 'fixed', 'finished'].includes(devStage)) ||
+            (tank.id === 'stop' && ['fixed', 'finished'].includes(devStage)) ||
+            (tank.id === 'fix' && devStage === 'finished');
+          const reachable =
+            tank.id === 'developer' ? isExposed
+              : tank.id === 'stop' ? ['stopped', 'fixed', 'finished'].includes(devStage)
+                : ['fixed', 'finished'].includes(devStage);
+
+          return (
+            <React.Fragment key={tank.id}>
+              {i > 0 && (
+                <div className="flex flex-col items-center justify-center px-1">
+                  <ArrowRight className={`w-6 h-6 ${reachable ? 'text-emerald-500' : 'text-neutral-800'}`} />
+                </div>
+              )}
+              <div
+                className={`w-64 rounded-xl border-2 p-4 flex flex-col gap-3 transition-colors ${
+                  isActive ? `${tank.ring} bg-neutral-900/80` : 'border-neutral-850 bg-neutral-950/60'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <span className={`font-mono text-[10px] ${tank.accent}`}>VASCA {tank.step}</span>
+                      {isDone && <Check className="w-3 h-3 text-emerald-500" />}
+                    </div>
+                    <div className="text-white font-semibold text-[13px]">{tank.name}</div>
+                  </div>
+                  <span className="font-mono text-[9.5px] text-neutral-500">{tank.time}</span>
+                </div>
+
+                {/* Tray basin. The sheet appears in it only when it is present. */}
+                <div className={`relative h-32 rounded-lg bg-gradient-to-b ${tank.liquid} border border-black/50 overflow-hidden shadow-inner`}>
+                  {/* Liquid surface highlight */}
+                  <div className="absolute inset-x-0 top-0 h-3 bg-white/5" />
+                  {isActive && (
+                    <div className="absolute inset-3 rounded bg-neutral-100/90 shadow-lg flex items-center justify-center">
+                      <span className="font-mono text-[9px] text-neutral-500 tracking-wider">LASTRA</span>
+                    </div>
+                  )}
+                  {!isActive && !isDone && reachable && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="font-mono text-[9px] text-white/30">vuota</span>
+                    </div>
+                  )}
+                  {isDone && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="font-mono text-[9px] text-emerald-300/70">trattata ✓</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Rock this specific tank */}
+                <button
+                  onClick={() => onRockTank(tank.id)}
+                  disabled={!isActive}
+                  className={`w-full py-2 rounded-lg text-[11px] font-mono font-bold flex items-center justify-center gap-1.5 transition-colors ${
+                    isActive
+                      ? 'bg-neutral-800 hover:bg-neutral-700 text-white border border-neutral-700'
+                      : 'bg-neutral-900/60 text-neutral-600 border border-neutral-850 cursor-not-allowed'
+                  }`}
+                >
+                  <Waves className="w-3.5 h-3.5" />
+                  Dondola la vasca
+                </button>
+              </div>
+            </React.Fragment>
+          );
+        })}
+
+        {/* Drying line, reached once the sheet has been fixed */}
+        <div className="flex flex-col items-center justify-center px-1">
+          <ArrowRight className={`w-6 h-6 ${activeTray === 'dry' ? 'text-emerald-500' : 'text-neutral-800'}`} />
+        </div>
+        <div
+          className={`w-52 rounded-xl border-2 p-4 flex flex-col gap-3 ${
+            activeTray === 'dry' ? 'border-emerald-500/70 bg-neutral-900/80' : 'border-neutral-850 bg-neutral-950/60'
+          }`}
+        >
+          <div>
+            <span className="font-mono text-[10px] text-emerald-400">LINEA DI ASCIUGATURA</span>
+            <div className="text-white font-semibold text-[13px]">Stampa finita</div>
+          </div>
+          <div className="relative flex-1 min-h-24 rounded-lg border border-neutral-850 bg-neutral-900/40 flex items-center justify-center overflow-hidden">
+            {activeTray === 'dry' ? (
+              <FileCheck className="w-8 h-8 text-emerald-500" />
+            ) : (
+              <span className="font-mono text-[9px] text-neutral-600">in attesa</span>
+            )}
+          </div>
+          <button
+            onClick={onInspect}
+            disabled={!isExposed}
+            className={`w-full py-2 rounded-lg text-[11px] font-mono flex items-center justify-center gap-1.5 transition-colors ${
+              isExposed
+                ? 'bg-neutral-800 hover:bg-neutral-700 text-white border border-neutral-700'
+                : 'bg-neutral-900/60 text-neutral-600 border border-neutral-850 cursor-not-allowed'
+            }`}
+          >
+            <Maximize2 className="w-3.5 h-3.5" />
+            Ispeziona
+          </button>
+        </div>
+      </div>
+
+      {/* Live view of the sheet in the chemistry, plus the bench controls */}
+      <div className="flex gap-5 items-start">
+        <div className="flex-1 bg-neutral-950/70 border border-neutral-800/80 rounded-xl p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-[10px] text-neutral-400 tracking-wider">LASTRA IN LAVORAZIONE</span>
+            {isExposed && (
+              <span className="font-mono text-[10px] text-neutral-500">clicca per ispezionare</span>
+            )}
+          </div>
+          <div
+            className={`border border-neutral-800 rounded-lg overflow-hidden bg-black p-2 flex items-center justify-center ${
+              isExposed ? 'cursor-zoom-in' : ''
+            }`}
+            onClick={() => isExposed && onInspect()}
+          >
+            <canvas ref={paperCanvasRef} className="w-full h-auto rounded shadow-inner max-h-64 object-contain" />
+          </div>
+          {devStage === 'developing' && (
+            <div className="bg-amber-950/30 border border-amber-900/60 rounded p-2 text-center">
+              <div className="font-mono text-lg text-amber-400 font-bold">{devTimeSeconds}s / 60s</div>
+              <div className="text-[10px] text-amber-500">Riduzione degli alogenuri d'argento nel rivelatore…</div>
+            </div>
+          )}
+        </div>
+
+        {/* Bench action rail: advance the sheet, bin it, export */}
+        <div className="w-72 shrink-0 space-y-2.5 text-xs">
+          <button
+            onClick={onAdvanceTray}
+            disabled={!isExposed || devStage === 'finished'}
+            className="w-full py-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-[12px] flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-95"
+          >
+            <ArrowDown className="w-4 h-4" />
+            {nextLabel}
+          </button>
+
+          <button
+            onClick={onBackToProjection}
+            className="w-full py-2 rounded-lg border border-neutral-800 text-neutral-400 hover:text-white flex items-center justify-center gap-1.5 text-[11px] font-mono transition-colors"
+          >
+            <ChevronLeft className="w-3.5 h-3.5" />
+            Torna all'ingranditore
+          </button>
+
+          <button
+            onClick={onTrashPaper}
+            title="Getta la lastra e carica un foglio nuovo"
+            className="w-full py-2 rounded-lg border border-red-900/70 text-red-400 hover:text-red-300 hover:border-red-800 flex items-center justify-center gap-1.5 text-[11px] font-mono transition-colors"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            Getta lastra · carica foglio nuovo
+          </button>
+
+          {(devStage === 'fixed' || devStage === 'stopped' || devStage === 'finished') && isExposed && (
+            <div className="pt-1 space-y-2">
+              <button
+                onClick={onExport}
+                disabled={isExporting}
+                className="w-full py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 text-neutral-950 font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-95"
+              >
+                <Download className="w-3.5 h-3.5" />
+                {isExporting ? 'Codifica stampa…' : 'Esporta stampa master'}
+              </button>
+              {exportNotice && (
+                <div className="text-[10px] font-mono text-emerald-400 text-center">{exportNotice}</div>
+              )}
+            </div>
+          )}
+
+          <div className="p-3 rounded-lg bg-neutral-950/60 border border-neutral-900 text-[10.5px] text-neutral-400 leading-relaxed">
+            Ogni vasca va dondolata: l'agitazione rinnova il chimico a contatto con
+            l'emulsione. Troppo poco e lo sviluppo si arena, troppo e le alte luci
+            salgono prima delle ombre.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onExit }) => {
   // Durst Enlarger Head Settings (CLS 501 Dichroic Head)
   const [yellowFilter, setYellowFilter] = useState<number>(0); // 0 - 130 (lowers contrast / yellow)
@@ -52,6 +369,21 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
   // Optical adjustments
   const [aperture, setAperture] = useState<number>(8); // f/2.8, 4, 5.6, 8, 11, 16
   const [columnHeight, setColumnHeight] = useState<number>(10); // 8x10, 11x14, 16x20 inches
+  /**
+   * Lens magnification, decoupled from column height. Column height now governs
+   * only the print size label and the delivered-light maths; this is the actual
+   * projection scale on the easel.
+   */
+  const [magnification, setMagnification] = useState<number>(1.0); // 0.4 .. 3.0
+  /**
+   * Focus, modelled as a lens distance offset from the correct position.
+   * 0 is critically sharp; drifting away softens the projection. Aperture
+   * interacts with it - stopping down widens the depth of focus, so a small
+   * error stays acceptable at f/16 and is obvious at f/2.8.
+   */
+  const [focusOffset, setFocusOffset] = useState<number>(0); // -1 .. 1
+  /** Pivot for magnification, as normalized easel coords (the lens axis). */
+  const [lensPivot, setLensPivot] = useState<{ x: number; y: number }>({ x: 0.5, y: 0.5 });
   const [redSafetyFilterSwungIn, setRedSafetyFilterSwungIn] = useState<boolean>(false);
   const [testStripMode, setTestStripMode] = useState<boolean>(false);
   const [paperType, setPaperType] = useState<PaperType>('ilford-fb-warmtone');
@@ -62,7 +394,7 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
   const [grainScopePos, setGrainScopePos] = useState<{ x: number; y: number }>({ x: 0.5, y: 0.5 });
 
   // Dodging & Burning simulation
-  const [activeTool, setActiveTool] = useState<'none' | 'dodge' | 'burn'>('none');
+  const [activeTool, setActiveTool] = useState<'none' | 'dodge' | 'burn' | 'pivot'>('none');
   const [dodgeBurnZones, setDodgeBurnZones] = useState<DodgeBurnZone[]>([]);
 
   // Safelight & Darkroom environment
@@ -79,12 +411,24 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
   // Developing Tray Simulation (Wet Bench)
   const [devStage, setDevStage] = useState<DevelopingStage>('unexposed');
   const [devTimeSeconds, setDevTimeSeconds] = useState<number>(0);
-  const [isAgitating, setIsAgitating] = useState<boolean>(false);
   const [agitationRipples, setAgitationRipples] = useState<number>(0);
 
   // Export State
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [exportNotice, setExportNotice] = useState<string | null>(null);
+
+  // View state: the darkroom has two stations. The projection side is the
+  // enlarger and easel; the chemistry side is the wet bench where the exposed
+  // sheet is developed, stopped and fixed.
+  const [activeSide, setActiveSide] = useState<'projection' | 'chemistry'>('projection');
+  /** Full-screen loupe view of the developed sheet. */
+  const [isInspecting, setIsInspecting] = useState<boolean>(false);
+  /**
+   * Snapshot of the developed sheet, captured from the wet-bench canvas when
+   * the user opens the full-screen loupe. Keeps the loupe independent of the
+   * tray canvas, which shares the same drawing routine.
+   */
+  const [inspectionSnapshot, setInspectionSnapshot] = useState<string | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const paperCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -278,16 +622,75 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
     return () => clearInterval(devInterval);
   }, [devStage]);
 
-  // Agitate Chemical Tray
-  const handleAgitateTray = () => {
-    setIsAgitating(true);
+  /**
+   * Move the sheet into the next tray. The darkroom has a fixed 3-tray order
+   * (developer -> stop -> fix), so this advances along it and refuses to jump.
+   */
+  const advanceTray = () => {
+    if (devStage === 'unexposed') {
+      if (exposureHistorySeconds === 0) return;
+      setDevStage('developing');
+      setDevTimeSeconds(0);
+      playSound('slosh');
+      return;
+    }
+    if (devStage === 'exposed') {
+      setDevStage('developing');
+      setDevTimeSeconds(0);
+      playSound('slosh');
+      return;
+    }
+    if (devStage === 'developing') {
+      setDevStage('stopped');
+      playSound('slosh');
+      return;
+    }
+    if (devStage === 'stopped') {
+      setDevStage('fixed');
+      playSound('slosh');
+      return;
+    }
+    if (devStage === 'fixed') {
+      setDevStage('finished');
+      playSound('beep');
+    }
+  };
+
+  /** Dump the sheet in the bin and pull a fresh, unexposed one from the box. */
+  const handleTrashPaper = () => {
+    setExposureHistorySeconds(0);
+    setDevStage('unexposed');
+    setDevTimeSeconds(0);
+    setIsPaperFogged(false);
+    setIsInspecting(false);
+    setInspectionSnapshot(null);
+    playSound('slosh');
+  };
+
+  /** Rock a specific tray. Agitation only speeds development, but every bath reacts. */
+  const handleRockTank = (tank: 'developer' | 'stop' | 'fix') => {
     setAgitationRipples(prev => prev + 1);
     playSound('slosh');
-    // Agitation accelerates developer diffusion to shadows and highlights
-    if (devStage === 'developing') {
+    if (tank === 'developer' && devStage === 'developing') {
       setDevTimeSeconds(prev => Math.min(60, prev + 2));
     }
-    setTimeout(() => setIsAgitating(false), 900);
+  };
+
+  /**
+   * Open the full-screen loupe. The tray canvas is snapshotted here so the
+   * loupe shows the exact sheet that is on the bench right now, and stays
+   * valid even if the chemistry keeps ticking behind it.
+   */
+  const openInspection = () => {
+    const canvas = paperCanvasRef.current;
+    if (canvas) {
+      try {
+        setInspectionSnapshot(canvas.toDataURL('image/png'));
+      } catch {
+        setInspectionSnapshot(null);
+      }
+    }
+    setIsInspecting(true);
   };
 
   // Handle Easel canvas click for Dodging / Burning / Grain Scope
@@ -300,6 +703,14 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
 
     if (showGrainScope) {
       setGrainScopePos({ x, y });
+      return;
+    }
+
+    // Placing the lens axis: magnification pivots around this point, so the
+    // user can choose which part of the frame to enlarge into.
+    if (activeTool === 'pivot') {
+      setLensPivot({ x, y });
+      setActiveTool('none');
       return;
     }
 
@@ -361,7 +772,23 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
       const printWidth = canvas.width - 64;
       const printHeight = canvas.height - 64;
 
-      // Offscreen inverted positive
+      /**
+       * The easel shows the projected NEGATIVE, not a finished positive.
+       *
+       * A real enlarger throws the film's own image onto the paper: an orange-
+       * masked, inverted-looking frame. The dichroic head sits in the light path
+       * BEFORE the negative, so its CMY dials attenuate the projection light,
+       * not the image. Previously this loop inverted the negative into a
+       * positive and then multiplied the CMY dials into it, which showed a
+       * finished print under the lamp and made the filter simulation
+       * meaningless - the filters appeared to tint the picture instead of
+       * controlling how much blue/green/red light reached the paper.
+       *
+       * Here the buffer stays a negative. Filtration is applied as subtractive
+       * light loss: Yellow removes blue, Magenta removes green, Cyan removes
+       * red. For B&W the filtration mainly changes contrast (the paper can only
+       * respond to blue/green), which is what the multigrade head actually does.
+       */
       const offCanvas = document.createElement('canvas');
       offCanvas.width = printWidth;
       offCanvas.height = printHeight;
@@ -372,78 +799,109 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
       const imgData = offCtx.getImageData(0, 0, printWidth, printHeight);
       const data = imgData.data;
 
-      // Durst Filter color cast & contrast simulation
-      // Yellow filter lowers contrast, Magenta increases contrast
-      const contrastMultiplier = 1.0 + (magentaFilter - yellowFilter) / 75;
-      const lightFactor = Math.pow(8 / aperture, 1.2);
+      // Subtractive transmission of the dichroic filters, per channel. 130 is
+      // full dial; at that point the channel is heavily but not totally cut,
+      // which is how a real dichroic head behaves.
+      const transmR = Math.max(0.05, 1.0 - cyanFilter / 150);
+      const transmG = Math.max(0.05, 1.0 - magentaFilter / 150);
+      const transmB = Math.max(0.05, 1.0 - yellowFilter / 150);
 
-      // Invert negative density to positive
       for (let i = 0; i < data.length; i += 4) {
         let r = data[i] / 255.0;
         let g = data[i + 1] / 255.0;
         let b = data[i + 2] / 255.0;
 
         if (isColorMode) {
-          // C-41 color positive projection with Durst dichroic filtration
-          const baseR = scan.settings.filmBase.r || 0.85;
-          const baseG = scan.settings.filmBase.g || 0.45;
-          const baseB = scan.settings.filmBase.b || 0.15;
-
-          let posR = 1.0 - (r / baseR);
-          let posG = 1.0 - (g / baseG);
-          let posB = 1.0 - (b / baseB);
-
-          // Apply Yellow / Magenta / Cyan filtration dials
-          posR *= (1.0 - cyanFilter / 260);
-          posG *= (1.0 - magentaFilter / 260);
-          posB *= (1.0 - yellowFilter / 260);
-
-          posR = Math.min(1.0, Math.max(0.0, (posR - 0.5) * contrastMultiplier + 0.5));
-          posG = Math.min(1.0, Math.max(0.0, (posG - 0.5) * contrastMultiplier + 0.5));
-          posB = Math.min(1.0, Math.max(0.0, (posB - 0.5) * contrastMultiplier + 0.5));
-
-          data[i] = Math.round(posR * 255);
-          data[i + 1] = Math.round(posG * 255);
-          data[i + 2] = Math.round(posB * 255);
+          // Colour negative: keep the negative, dim it by the filter pack. The
+          // orange mask deliberately stays visible - that mask is exactly what
+          // the CMY dials exist to cancel during printing.
+          r *= transmR;
+          g *= transmG;
+          b *= transmB;
         } else {
-          // Silver Halide B&W density inversion
-          const invLuma = 1.0 - (0.299 * r + 0.587 * g + 0.114 * b);
-          let pos = (invLuma - 0.5) * contrastMultiplier + 0.5;
-          pos = Math.min(1.0, Math.max(0.0, pos * lightFactor));
+          // B&W negative: silver density is not a colour, so the filters act as
+          // overall light loss with a slight contrast shift from the
+          // yellow/magenta balance.
+          const filtFactor = (transmR + transmG + transmB) / 3;
+          const density = (0.299 * r + 0.587 * g + 0.114 * b) * filtFactor;
+          r = density;
+          g = density;
+          b = density;
 
-          // Test strip stepped exposure mode simulation
+          // Test strip: stepped exposure across the sheet, shown as uneven
+          // projected brightness - the five bands a test strip uses.
           if (testStripMode) {
             const pixelX = (i / 4) % printWidth;
             const stripIndex = Math.floor((pixelX / printWidth) * 5);
             const stripMult = [0.25, 0.55, 1.0, 1.6, 2.5][stripIndex];
-            pos = Math.min(1.0, Math.max(0.0, pos * stripMult));
+            r = Math.min(1.0, r * stripMult);
+            g = Math.min(1.0, g * stripMult);
+            b = Math.min(1.0, b * stripMult);
           }
-
-          data[i] = Math.round(pos * 255);
-          data[i + 1] = Math.round(pos * 255);
-          data[i + 2] = Math.round(pos * 255);
         }
+
+        // The negative modulates the lamp: bright negative areas pass more
+        // light.
+        data[i] = Math.round(Math.min(1, r) * 255);
+        data[i + 1] = Math.round(Math.min(1, g) * 255);
+        data[i + 2] = Math.round(Math.min(1, b) * 255);
         data[i + 3] = 255;
       }
       offCtx.putImageData(imgData, 0, 0);
+
+      /**
+       * Depth of focus: a real lens has a tolerance, and stopping down widens
+       * it. At f/2.8 any error is visible; at f/16 the same error is tolerable.
+       * This is what makes focus a real control the user can "mess up".
+       */
+      const focusTolerance = 0.12 * (aperture / 8);
+      const defocus = Math.max(
+        0,
+        (Math.abs(focusOffset) - focusTolerance) / Math.max(0.01, 1 - focusTolerance)
+      );
+      // Blur radius in display pixels. Bounded so a fully defocused frame stays
+      // legible enough to compose and refocus.
+      const blurPx = Math.round(defocus * 14);
+
+      // Draw the projected negative through the lens: magnified about the pivot
+      // and translated, then optionally softened by defocus.
+      const drawProjection = () => {
+        ctx.save();
+        // Clip to the paper area so magnification crops at the easel blades,
+        // exactly as an enlarger's projected field is cropped by the easel.
+        ctx.beginPath();
+        ctx.rect(32, 32, printWidth, printHeight);
+        ctx.clip();
+
+        if (blurPx > 0) {
+          ctx.filter = `blur(${blurPx}px)`;
+        }
+
+        // Magnify about the pivot: scale, then shift so the pivot stays put.
+        const px = 32 + lensPivot.x * printWidth;
+        const py = 32 + lensPivot.y * printHeight;
+        ctx.translate(px, py);
+        ctx.scale(magnification, magnification);
+        ctx.translate(-px, -py);
+
+        ctx.drawImage(offCanvas, 32, 32);
+
+        ctx.filter = 'none';
+        ctx.restore();
+      };
 
       // Projection light simulation
       if (isLampOn) {
         // Enlarger Lamp illuminated
         if (redSafetyFilterSwungIn) {
           // Cast deep ruby red non-actinic safety light
-          ctx.drawImage(offCanvas, 32, 32);
+          drawProjection();
           ctx.fillStyle = 'rgba(239, 68, 68, 0.75)';
           ctx.fillRect(32, 32, printWidth, printHeight);
         } else {
-          // Intense projection light
-          ctx.drawImage(offCanvas, 32, 32);
-
-          // Add dichroic filter glow
-          if (yellowFilter > 0 || magentaFilter > 0 || cyanFilter > 0) {
-            ctx.fillStyle = `rgba(${Math.round(255 - cyanFilter * 1.5)}, ${Math.round(255 - magentaFilter * 1.5)}, ${Math.round(255 - yellowFilter * 1.5)}, 0.12)`;
-            ctx.fillRect(32, 32, printWidth, printHeight);
-          }
+          // Projected negative under the lamp. The dichroic pack is already in
+          // the pixel math above; this is just the lamp's own warm cast.
+          drawProjection();
         }
       } else {
         // Enlarger lamp OFF: unexposed paper sitting under safelight
@@ -479,6 +937,27 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
         ctx.font = '10px monospace';
         ctx.fillText(`${zone.type.toUpperCase()} #${idx + 1}`, zx - 24, zy - zr - 4);
       });
+
+      // Lens axis marker: the point magnification pivots around. Only shown
+      // while placing it, so it does not clutter the composed frame.
+      if (activeTool === 'pivot') {
+        const px = 32 + lensPivot.x * printWidth;
+        const py = 32 + lensPivot.y * printHeight;
+        ctx.beginPath();
+        ctx.arc(px, py, 12, 0, Math.PI * 2);
+        ctx.strokeStyle = '#fbbf24';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(px - 20, py);
+        ctx.lineTo(px + 20, py);
+        ctx.moveTo(px, py - 20);
+        ctx.lineTo(px, py + 20);
+        ctx.stroke();
+        ctx.fillStyle = '#fbbf24';
+        ctx.font = '10px monospace';
+        ctx.fillText('ASSE LENTE', px + 16, py - 14);
+      }
 
       // Render Paterson Grain Focus Finder Loupe if active
       if (showGrainScope) {
@@ -527,6 +1006,10 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
     cyanFilter, 
     aperture, 
     columnHeight, 
+    magnification,
+    focusOffset,
+    lensPivot,
+    activeTool,
     testStripMode,
     isColorMode,
     paperType,
@@ -549,7 +1032,8 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
     ctx.fillStyle = '#101015';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Liquid ripple and chemical color
+    // Liquid ripple and chemical color. The sheet is drawn as it sits in the
+    // current bath, so the liquid matches whichever tank is active.
     let liquidColor = 'rgba(217, 119, 6, 0.22)'; // Amber developer
     if (devStage === 'stopped') liquidColor = 'rgba(234, 179, 8, 0.22)'; // Yellowish stop bath
     if (devStage === 'fixed' || devStage === 'finished') liquidColor = 'rgba(59, 130, 246, 0.18)'; // Blue-clear fixer
@@ -557,8 +1041,9 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
     ctx.fillStyle = liquidColor;
     ctx.fillRect(12, 12, canvas.width - 24, canvas.height - 24);
 
-    // Agitation wave animation
-    if (isAgitating) {
+    // Agitation ripples. Each rock of a tank bumps `agitationRipples`, so the
+    // surface shows a few seconds of movement rather than a static bath.
+    if (agitationRipples > 0) {
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
       ctx.lineWidth = 2;
       for (let w = 0; w < 4; w++) {
@@ -622,9 +1107,18 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
             const baseG = scan.settings.filmBase.g || 0.45;
             const baseB = scan.settings.filmBase.b || 0.15;
 
-            let posR = 1.0 - (r / baseR);
-            let posG = 1.0 - (g / baseG);
-            let posB = 1.0 - (b / baseB);
+            // Density above the mask becomes print density (a positive). The
+            // mask itself is neutralised by the same dichroic transmission the
+            // lamp applies, so the CMY dials correct the orange cast the way
+            // they do on a real colour head - including cyan, which previously
+            // had no effect on the print at all.
+            const transmR = Math.max(0.05, 1.0 - cyanFilter / 150);
+            const transmG = Math.max(0.05, 1.0 - magentaFilter / 150);
+            const transmB = Math.max(0.05, 1.0 - yellowFilter / 150);
+
+            let posR = 1.0 - (r / baseR) / transmR;
+            let posG = 1.0 - (g / baseG) / transmG;
+            let posB = 1.0 - (b / baseB) / transmB;
 
             posR = Math.min(1.0, Math.max(0.0, (posR - 0.5) * contrastMultiplier + 0.5));
             posG = Math.min(1.0, Math.max(0.0, (posG - 0.5) * contrastMultiplier + 0.5));
@@ -670,13 +1164,16 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
     devTimeSeconds, 
     exposureHistorySeconds, 
     scan, 
+    cyanFilter,
     magentaFilter, 
     yellowFilter, 
     isColorMode, 
     paperType, 
-    isAgitating, 
     agitationRipples, 
-    isPaperFogged
+    isPaperFogged,
+    // The tray canvas only exists on the chemistry side, so re-render when the
+    // user switches over to it, otherwise the freshly mounted canvas stays blank.
+    activeSide
   ]);
 
   // Export developed Gelatin Silver / Color Darkroom Print
@@ -732,9 +1229,15 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
           const baseG = scan.settings.filmBase.g || 0.45;
           const baseB = scan.settings.filmBase.b || 0.15;
 
-          let posR = 1.0 - (r / baseR);
-          let posG = 1.0 - (g / baseG);
-          let posB = 1.0 - (b / baseB);
+          // Same dichroic transmission as the lamp and the tray, so the
+          // exported print reproduces exactly what was composed on the easel.
+          const transmR = Math.max(0.05, 1.0 - cyanFilter / 150);
+          const transmG = Math.max(0.05, 1.0 - magentaFilter / 150);
+          const transmB = Math.max(0.05, 1.0 - yellowFilter / 150);
+
+          let posR = 1.0 - (r / baseR) / transmR;
+          let posG = 1.0 - (g / baseG) / transmG;
+          let posB = 1.0 - (b / baseB) / transmB;
 
           posR = Math.min(1.0, Math.max(0.0, (posR - 0.5) * contrastMultiplier + 0.5));
           posG = Math.min(1.0, Math.max(0.0, (posG - 0.5) * contrastMultiplier + 0.5));
@@ -891,8 +1394,8 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
 
       {/* Main Darkroom Floor */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Column: Durst Dichroic Mixing Head Controls */}
-        <div className="w-88 bg-black/50 border-r border-red-950/60 p-5 overflow-y-auto space-y-5 scrollbar-thin text-xs">
+        {/* Left Column: Durst Dichroic Mixing Head Controls (projection side only) */}
+        <div className={`${activeSide === 'projection' ? 'w-88' : 'hidden'} bg-black/50 border-r border-red-950/60 p-5 overflow-y-auto space-y-5 scrollbar-thin text-xs`}>
           {/* Dichroic Filter Wheels */}
           <div className="bg-neutral-950/80 border border-neutral-800/80 rounded-xl p-4 space-y-4">
             <div className="flex items-center justify-between">
@@ -1061,11 +1564,11 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
               </div>
             </div>
 
-            {/* Column Height */}
+            {/* Column Height: print size, not magnification. */}
             <div>
               <div className="flex justify-between font-mono text-[11px] mb-1">
-                <span className="text-neutral-400">Magnification / Size</span>
-                <span className="text-white font-mono">{columnHeight}×{Math.round(columnHeight * 1.25)}" print</span>
+                <span className="text-neutral-400">Column Height / Print Size</span>
+                <span className="text-white font-mono">{columnHeight}×{Math.round(columnHeight * 1.25)}"</span>
               </div>
               <input
                 type="range"
@@ -1075,6 +1578,85 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
                 onChange={(e) => setColumnHeight(parseInt(e.target.value))}
                 className="w-full accent-amber-400 h-1.5 bg-neutral-800 rounded"
               />
+            </div>
+
+            {/* Lens Magnification: the actual projection scale on the easel. */}
+            <div>
+              <div className="flex justify-between font-mono text-[11px] mb-1">
+                <span className="text-neutral-400 flex items-center gap-1.5">
+                  <ZoomIn className="w-3.5 h-3.5 text-amber-400" />
+                  Lens Magnification
+                </span>
+                <span className="text-white font-mono">{magnification.toFixed(2)}×</span>
+              </div>
+              <input
+                type="range"
+                min="0.4"
+                max="3"
+                step="0.05"
+                value={magnification}
+                onChange={(e) => setMagnification(parseFloat(e.target.value))}
+                className="w-full accent-amber-400 h-1.5 bg-neutral-800 rounded"
+              />
+              <div className="flex justify-between font-mono text-[9.5px] text-neutral-500 mt-0.5">
+                <span>0.40× (whole frame)</span>
+                <span>3.00× (detail)</span>
+              </div>
+              <button
+                onClick={() => setActiveTool(activeTool === 'pivot' ? 'none' : 'pivot')}
+                className={`mt-1.5 w-full py-1 rounded text-[10px] font-mono transition-colors ${
+                  activeTool === 'pivot'
+                    ? 'bg-amber-400 text-neutral-950 font-bold'
+                    : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white'
+                }`}
+                title="Click the easel to choose the point magnification centres on"
+              >
+                {activeTool === 'pivot' ? 'Clicca sull\'easel…' : 'Posiziona asse lente'}
+              </button>
+            </div>
+
+            {/* Focusing: drift away from critical focus to soften the print. */}
+            <div>
+              <div className="flex justify-between font-mono text-[11px] mb-1">
+                <span className="text-neutral-400">Focus (bellows)</span>
+                <span
+                  className={`font-mono font-bold ${
+                    Math.abs(focusOffset) <= 0.12 * (aperture / 8) ? 'text-emerald-400' : 'text-amber-400'
+                  }`}
+                >
+                  {Math.abs(focusOffset) <= 0.12 * (aperture / 8)
+                    ? 'CRITICAL'
+                    : focusOffset > 0
+                      ? 'BACK FOCUS'
+                      : 'FRONT FOCUS'}
+                </span>
+              </div>
+              <input
+                type="range"
+                min="-1"
+                max="1"
+                step="0.01"
+                value={focusOffset}
+                onChange={(e) => setFocusOffset(parseFloat(e.target.value))}
+                className="w-full accent-amber-400 h-1.5 bg-neutral-800 rounded"
+              />
+              <div className="flex items-center justify-between mt-1">
+                <div className="flex justify-between font-mono text-[9.5px] text-neutral-500 flex-1 pr-2">
+                  <span>−1.0</span>
+                  <span>0 (sharp)</span>
+                  <span>+1.0</span>
+                </div>
+                <button
+                  onClick={() => setFocusOffset(0)}
+                  className="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-[9.5px] font-mono transition-colors"
+                  title="Snap to critical focus"
+                >
+                  Critico
+                </button>
+              </div>
+              <p className="text-[9.5px] text-neutral-500 mt-1 leading-snug">
+                Stopping down to f/16 widens the depth of focus, so small errors stay acceptable.
+              </p>
             </div>
 
             {/* Red Safety Swing Filter Arm */}
@@ -1184,8 +1766,50 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
           </div>
         </div>
 
-        {/* Center: Enlarger Projection Paper Easel */}
-        <div className="flex-1 flex flex-col items-center justify-center p-6 relative overflow-hidden">
+        {/* Center: Enlarger Projection Paper Easel / Wet Bench */}
+        <div className="flex-1 flex flex-col relative overflow-hidden">
+          {/* Station toolbar: switch between the enlarger and the wet bench */}
+          <div className="flex items-center gap-2 px-6 py-2.5 border-b border-neutral-900 bg-black/40">
+            <span className="font-mono text-[10px] text-neutral-500 tracking-wider mr-2">DARKROOM STATION</span>
+            <button
+              onClick={() => setActiveSide('projection')}
+              className={`px-3.5 py-1.5 rounded-lg text-[11px] font-mono flex items-center gap-1.5 transition-colors ${
+                activeSide === 'projection'
+                  ? 'bg-amber-400 text-neutral-950 font-bold shadow'
+                  : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white'
+              }`}
+            >
+              <Sun className="w-3.5 h-3.5" />
+              Proiezione
+            </button>
+            <ArrowRight className="w-3.5 h-3.5 text-neutral-700" />
+            <button
+              onClick={() => setActiveSide('chemistry')}
+              className={`px-3.5 py-1.5 rounded-lg text-[11px] font-mono flex items-center gap-1.5 transition-colors ${
+                activeSide === 'chemistry'
+                  ? 'bg-amber-400 text-neutral-950 font-bold shadow'
+                  : 'bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white'
+              }`}
+            >
+              <FlaskConical className="w-3.5 h-3.5" />
+              Chimica
+            </button>
+
+            <div className="ml-auto flex items-center gap-3 text-[10.5px] font-mono text-neutral-400">
+              <span>Exposure: <strong className="text-amber-400">{exposureHistorySeconds.toFixed(1)}s</strong></span>
+              <span className="text-neutral-700">·</span>
+              <span>f/<strong>{aperture}</strong></span>
+              <span className="text-neutral-700">·</span>
+              <span>G<strong>{selectedGrade}</strong></span>
+              <span className="text-neutral-700">·</span>
+              <span className={isPaperFogged ? 'text-red-400' : devStage === 'finished' || devStage === 'fixed' ? 'text-emerald-400' : ''}>
+                {isPaperFogged ? 'FOGGED' : `SHEET: ${devStage.toUpperCase()}`}
+              </span>
+            </div>
+          </div>
+
+          {activeSide === 'projection' ? (
+          <div className="flex-1 flex flex-col items-center justify-center p-6 relative overflow-hidden">
           {/* Light cone beam animation */}
           {isLampOn && (
             <div
@@ -1249,133 +1873,72 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
             <span>·</span>
             <span>Paper: <strong>{paperType}</strong></span>
           </div>
-        </div>
 
-        {/* Right Column: Chemical Developing Trays (Wet Bench) */}
-        <div className="w-88 bg-black/50 border-l border-red-950/60 p-5 overflow-y-auto space-y-4 text-xs scrollbar-thin">
-          <div className="bg-neutral-950/80 border border-neutral-800/80 rounded-xl p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="font-mono text-amber-400 font-bold tracking-wider text-[11px]">
-                WET BENCH CHEMISTRY
-              </span>
-              <span className="text-[10px] font-mono text-neutral-500">3-Tray Process</span>
-            </div>
-
-            {/* Developing Tray Preview */}
-            <div className="border border-neutral-800 rounded-lg overflow-hidden bg-black p-2 flex items-center justify-center">
-              <canvas ref={paperCanvasRef} className="w-full h-auto rounded shadow-inner" />
-            </div>
-
-            {/* Chemical Tray Stages */}
-            <div className="space-y-2 pt-1">
-              <div className="flex justify-between font-mono text-[11px]">
-                <span className="text-neutral-400">Tray Stage:</span>
-                <span className="text-amber-400 font-bold uppercase">{devStage}</span>
-              </div>
-
-              {devStage === 'developing' && (
-                <div className="bg-amber-950/30 border border-amber-900/60 rounded p-2 text-center">
-                  <div className="font-mono text-lg text-amber-400 font-bold">
-                    {devTimeSeconds}s / 60s
-                  </div>
-                  <div className="text-[10px] text-amber-500">Developing silver halides in Kodak D-72 / Dektol...</div>
-                </div>
-              )}
-
-              {/* Chemical Tray Action Buttons */}
-              <div className="grid grid-cols-3 gap-1 pt-1">
-                <button
-                  onClick={() => {
-                    setDevStage('developing');
-                    setDevTimeSeconds(0);
-                    playSound('slosh');
-                  }}
-                  disabled={exposureHistorySeconds === 0}
-                  className="py-1.5 px-1 rounded bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-neutral-950 font-bold text-[10px] transition-colors"
-                >
-                  1. Developer
-                </button>
-                <button
-                  onClick={() => {
-                    setDevStage('stopped');
-                    playSound('slosh');
-                  }}
-                  disabled={devStage === 'unexposed'}
-                  className="py-1.5 px-1 rounded bg-neutral-800 hover:bg-neutral-700 disabled:opacity-40 text-neutral-200 text-[10px] transition-colors"
-                >
-                  2. Stop Bath
-                </button>
-                <button
-                  onClick={() => {
-                    setDevStage('fixed');
-                    playSound('slosh');
-                  }}
-                  disabled={devStage === 'unexposed'}
-                  className="py-1.5 px-1 rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white text-[10px] transition-colors"
-                >
-                  3. Rapid Fix
-                </button>
-              </div>
-
-              {/* Agitate chemical tray button */}
-              <button
-                onClick={handleAgitateTray}
-                disabled={devStage === 'unexposed'}
-                className="w-full py-1.5 rounded bg-neutral-900 hover:bg-neutral-800 disabled:opacity-40 border border-neutral-800 text-neutral-300 flex items-center justify-center gap-1.5 text-[11px] transition-colors"
-              >
-                <Waves className="w-3.5 h-3.5 text-amber-400" />
-                <span>Agitate Chemical Tray (Rock Basin)</span>
-              </button>
-
-              {/* Reset to unexposed sheet */}
-              <button
-                onClick={() => {
-                  setExposureHistorySeconds(0);
-                  setDevStage('unexposed');
-                  setDevTimeSeconds(0);
-                  setIsPaperFogged(false);
-                }}
-                className="w-full py-1.5 rounded border border-neutral-850 text-neutral-400 hover:text-white flex items-center justify-center gap-1 text-[11px] transition-colors"
-              >
-                <RotateCcw className="w-3 h-3" />
-                <span>Load Fresh Unexposed Paper</span>
-              </button>
-            </div>
+          {/* Send the exposed sheet over to the wet bench */}
+          <button
+            onClick={() => setActiveSide('chemistry')}
+            className="mt-4 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-mono font-bold flex items-center gap-2 transition-colors shadow-lg"
+          >
+            <FlaskConical className="w-3.5 h-3.5" />
+            Esposto → Porta al banco chimico
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
           </div>
-
-          {/* Export Developed Master Print */}
-          {(devStage === 'fixed' || devStage === 'stopped' || devStage === 'finished') && exposureHistorySeconds > 0 && (
-            <div className="bg-neutral-950/80 border border-neutral-800/80 rounded-xl p-4 space-y-2.5">
-              <div className="flex items-center gap-2 text-white font-semibold text-xs">
-                <FileCheck className="w-4 h-4 text-emerald-400" />
-                <span>Archival Gelatin Silver Print Ready</span>
-              </div>
-              <p className="text-[11px] text-neutral-400 leading-relaxed">
-                Your print has completed fixing and washing. Export high-resolution master with darkroom easel border and laboratory stamp.
-              </p>
-              <button
-                onClick={handleExportDevelopedPrint}
-                disabled={isExporting}
-                className="w-full py-2.5 rounded bg-emerald-500 hover:bg-emerald-400 text-neutral-950 font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-95"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>{isExporting ? 'Encoding Print...' : 'Download Master Darkroom Print'}</span>
-              </button>
-              {exportNotice && (
-                <div className="text-[10px] font-mono text-emerald-400 text-center">{exportNotice}</div>
-              )}
-            </div>
+          ) : (
+          <WetBench
+            devStage={devStage}
+            devTimeSeconds={devTimeSeconds}
+            exposureHistorySeconds={exposureHistorySeconds}
+            isPaperFogged={isPaperFogged}
+            isExporting={isExporting}
+            exportNotice={exportNotice}
+            paperCanvasRef={paperCanvasRef}
+            onAdvanceTray={advanceTray}
+            onRockTank={handleRockTank}
+            onTrashPaper={handleTrashPaper}
+            onInspect={openInspection}
+            onExport={handleExportDevelopedPrint}
+            onBackToProjection={() => setActiveSide('projection')}
+          />
           )}
-
-          {/* Darkroom Physics Card */}
-          <div className="p-3.5 rounded-lg bg-neutral-950/60 border border-neutral-900 text-[11px] text-neutral-400 space-y-1.5">
-            <div className="font-semibold text-neutral-200 text-xs">Durst Optical Science</div>
-            <p className="leading-relaxed">
-              Dichroic filters use interference coatings to continuously vary paper contrast. The yellow filter lowers contrast (soft highlights), while magenta intensifies deep blacks by selectively exposing the high-contrast green-sensitive emulsion layer.
-            </p>
-          </div>
         </div>
       </div>
+
+      {/* Full-screen inspection of the developed sheet */}
+      {isInspecting && (
+        <div
+          className="fixed inset-0 z-50 bg-black/95 flex flex-col items-center justify-center p-8"
+          onClick={() => setIsInspecting(false)}
+        >
+          <div className="absolute top-4 right-5 flex items-center gap-2">
+            <button
+              onClick={(e) => { e.stopPropagation(); handleExportDevelopedPrint(); }}
+              disabled={isExporting}
+              className="px-3 py-1.5 rounded bg-emerald-500 hover:bg-emerald-400 text-neutral-950 font-bold text-[11px] font-mono flex items-center gap-1.5"
+            >
+              <Download className="w-3.5 h-3.5" />
+              {isExporting ? 'Encoding…' : 'Export'}
+            </button>
+            <button
+              onClick={() => setIsInspecting(false)}
+              className="p-1.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          {inspectionSnapshot && (
+            <img
+              src={inspectionSnapshot}
+              alt="Developed print"
+              className="max-w-full max-h-[80vh] w-auto rounded shadow-2xl border border-neutral-800"
+              onClick={(e) => e.stopPropagation()}
+            />
+          )}
+          <div className="mt-4 font-mono text-[11px] text-neutral-400">
+            {devStage.toUpperCase()} · {paperType} · G{selectedGrade} · f/{aperture} · {exposureHistorySeconds.toFixed(1)}s — click anywhere to close
+          </div>
+        </div>
+      )}
     </div>
   );
 };
