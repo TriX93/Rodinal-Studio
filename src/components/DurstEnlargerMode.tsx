@@ -28,7 +28,8 @@ import {
   X,
   ArrowRight,
   ArrowDown,
-  FlaskConical
+  FlaskConical,
+  HelpCircle
 } from 'lucide-react';
 import { TiffWriter } from '../engine/export/tiffWriter';
 
@@ -359,6 +360,258 @@ const WetBench: React.FC<WetBenchProps> = ({
   );
 };
 
+interface TutorialPanelProps {
+  activeSide: 'projection' | 'chemistry';
+  devStage: DevelopingStage;
+  isLampOn: boolean;
+  exposureHistorySeconds: number;
+  yellowFilter: number;
+  magentaFilter: number;
+  cyanFilter: number;
+  selectedGrade: MultigradeGrade;
+  aperture: number;
+  isColorMode: boolean;
+  onClose: () => void;
+  onGoToSide: (side: 'projection' | 'chemistry') => void;
+}
+
+/**
+ * Guided walkthrough for the darkroom. The simulation hides a lot of physics
+ * behind familiar darkroom controls, so this panel explains, at each stage of
+ * the workflow, what the user should be doing and - crucially - how each knob
+ * changes the final print.
+ */
+const TutorialPanel: React.FC<TutorialPanelProps> = ({
+  activeSide,
+  devStage,
+  isLampOn,
+  exposureHistorySeconds,
+  yellowFilter,
+  magentaFilter,
+  cyanFilter,
+  selectedGrade,
+  aperture,
+  isColorMode,
+  onClose,
+  onGoToSide
+}) => {
+  const hasExposure = exposureHistorySeconds > 0;
+
+  // Which step of the workflow the user is on. Drives the highlighted guidance.
+  const step: number =
+    activeSide === 'projection'
+      ? isLampOn || hasExposure ? 2 : 1
+      : devStage === 'unexposed' || devStage === 'exposed' ? 2
+        : devStage === 'developing' ? 3
+          : devStage === 'stopped' ? 4
+            : devStage === 'fixed' || devStage === 'finished' ? 5
+              : 1;
+
+  // Filtration is "set" once the user has moved any dial off zero.
+  const filtrationMoved = yellowFilter > 0 || magentaFilter > 0 || cyanFilter > 0;
+
+  const steps: Array<{ n: number; title: string; body: React.ReactNode }> = [
+    {
+      n: 1,
+      title: 'Componi l\'immagine sull\'easel',
+      body: (
+        <>
+          Tutto avviene sul lato <strong>Proiezione</strong>. L'easel mostra il{' '}
+          <strong>negativo proiettato</strong>: è normale vederlo arancione e
+          invertito, è la pellicola che il lampo dell'ingranditore attraversa.
+          <ul className="mt-1.5 space-y-1 list-disc list-inside text-[10.5px]">
+            <li><strong>Ingrandimento</strong> — scala la proiezione attorno all'asse lente.</li>
+            <li><strong>Messa a fuoco</strong> — «Critico» per una lastra nitida.</li>
+            <li><strong>Colonna</strong> — non zooma, cambia solo la luce totale.</li>
+          </ul>
+        </>
+      )
+    },
+    {
+      n: 2,
+      title: 'Filtra la luce e decidi l\'esposizione',
+      body: (
+        <>
+          I filtri <strong>CMY</strong> stanno nel cammino della luce{' '}
+          <em>prima</em> della pellicola: sottraggono colore alla luce, non alla
+          stampa. Ecco cosa fanno al risultato finale:
+          <ul className="mt-1.5 space-y-1 list-disc list-inside text-[10.5px]">
+            <li><span className="text-yellow-400">Giallo</span> taglia il blu → <strong>meno contrasto</strong> (alte luci morbide).</li>
+            <li><span className="text-pink-400">Magenta</span> taglia il verde → <strong>più contrasto</strong> (neri profondi).</li>
+            <li><span className="text-cyan-400">Cyan</span> taglia il rosso → densità generale e bilanciamento del mascheramento arancione.</li>
+          </ul>
+          <p className="mt-1.5">
+            In <strong>B&amp;N multigrade</strong> i gradi G00–G5 sono preset rapidi
+            degli stessi filtri. Il <strong>diaframma</strong> (f/) regola quanta luce
+            arriva: più chiuso = esposizione più lunga ma lastra più nitida.
+          </p>
+          <p className="mt-1.5">
+            Premia <strong>Expose Print</strong> col timer impostato. La
+            <em> esposizione accumulata</em> in alto è la tua densità: poca = lastra
+            chiara, tanta = lastra scura.
+          </p>
+        </>
+      )
+    },
+    {
+      n: 3,
+      title: 'Sviluppo',
+      body: (
+        <>
+          Passa al lato <strong>Chimica</strong> con la freccia verde. La lastra
+          esposta entra nella <strong>vasca 1 (Sviluppo)</strong>: qui l'immagine
+          latente diventa visibile.
+          <ul className="mt-1.5 space-y-1 list-disc list-inside text-[10.5px]">
+            <li><strong>Dondola la vasca</strong> per rinnovare il rivelatore a contatto con l'emulsione: l'agitazione accelera lo sviluppo.</li>
+            <li>Il tempo sull'indicatore sale mentre la densità cresce.</li>
+          </ul>
+          <p className="mt-1.5">
+            <strong>Sviluppa troppo</strong> → la lastra si scurisce anche nelle alte
+            luci; <strong>troppo poco</strong> → immagine debole e piatta.
+          </p>
+        </>
+      )
+    },
+    {
+      n: 4,
+      title: 'Arresto',
+      body: (
+        <p>
+          La <strong>vasca 2 (Arresto)</strong> blocca lo sviluppo: il bagno acido
+          neutralizza il rivelatore rimasto sull'emulsione, altrimenti lo sviluppo
+          continuerebbe fuori vasca. Anche questa va dondolata.
+        </p>
+      )
+    },
+    {
+      n: 5,
+      title: 'Fissaggio, lavaggio ed export',
+      body: (
+        <>
+          La <strong>vasca 3 (Fissaggio)</strong> rende l'immagine permanente
+          sciogliendo gli alogenuri non esposti — senza questo passaggio la lastra
+          annerisce alla luce. Poi «Lava &amp; Asciuga» e la stampa è pronta.
+          <ul className="mt-1.5 space-y-1 list-disc list-inside text-[10.5px]">
+            <li><strong>Ispeziona</strong> o clicca la lastra per vederla a schermo intero.</li>
+            <li>Il <strong>cestino</strong> butta la lastra e carica un foglio nuovo.</li>
+            <li><strong>Esporta stampa master</strong> salva il risultato finale.</li>
+          </ul>
+        </>
+      )
+    }
+  ];
+
+  return (
+    <div className="w-80 shrink-0 bg-black/60 border-l border-amber-950/60 overflow-y-auto scrollbar-thin p-5 space-y-4 text-xs">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <span className="font-mono text-amber-400 font-bold tracking-wider text-[11px] block">
+            GUIDA AL LABORATORIO
+          </span>
+          <p className="text-[10.5px] text-neutral-500 mt-0.5">Passo {step} di 5</p>
+        </div>
+        <button
+          onClick={onClose}
+          className="p-1 rounded bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white"
+          title="Chiudi la guida"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      {/* Progress rail */}
+      <div className="flex gap-1">
+        {[1, 2, 3, 4, 5].map((n) => (
+          <div
+            key={n}
+            className={`h-1 flex-1 rounded-full ${
+              n <= step ? 'bg-amber-400' : 'bg-neutral-800'
+            }`}
+          />
+        ))}
+      </div>
+
+      {/* Current step, expanded */}
+      {steps
+        .filter((s) => s.n === step)
+        .map((s) => (
+          <div key={s.n} className="bg-neutral-950/80 border border-amber-900/50 rounded-xl p-4 space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="w-5 h-5 rounded-full bg-amber-400 text-neutral-950 font-bold text-[10px] flex items-center justify-center shrink-0">
+                {s.n}
+              </span>
+              <span className="text-white font-semibold text-[12.5px]">{s.title}</span>
+            </div>
+            <div className="text-neutral-300 leading-relaxed text-[11px]">{s.body}</div>
+            {((step === 1 && activeSide !== 'projection') ||
+              (step === 2 && activeSide !== 'projection' && !hasExposure) ||
+              (step >= 3 && step <= 5 && activeSide !== 'chemistry')) && (
+              <button
+                onClick={() => onGoToSide(step >= 3 && step <= 5 ? 'chemistry' : 'projection')}
+                className="w-full mt-1 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] font-mono flex items-center justify-center gap-1.5"
+              >
+                Vai al lato {step >= 3 && step <= 5 ? 'Chimica' : 'Proiezione'}
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        ))}
+
+      {/* Live state readout, so the user sees the numbers change as they work */}
+      <div className="bg-neutral-950/80 border border-neutral-800/80 rounded-xl p-4 space-y-2">
+        <span className="font-mono text-[10px] text-neutral-400 uppercase tracking-wider block">
+          Stato attuale
+        </span>
+        <div className="grid grid-cols-2 gap-y-1 font-mono text-[10.5px]">
+          <span className="text-neutral-500">Modalità</span>
+          <span className="text-white text-right">{isColorMode ? 'Colore C-41' : 'B&N multigrade'}</span>
+          <span className="text-neutral-500">Grado</span>
+          <span className="text-white text-right">{selectedGrade === 'custom' ? 'custom' : `G${selectedGrade}`}</span>
+          <span className="text-neutral-500">Diaframma</span>
+          <span className="text-white text-right">f/{aperture}</span>
+          <span className="text-neutral-500">Esposizione</span>
+          <span className={hasExposure ? 'text-amber-400 text-right' : 'text-neutral-600 text-right'}>
+            {exposureHistorySeconds.toFixed(1)}s
+          </span>
+          <span className="text-neutral-500">Filtri</span>
+          <span className="text-white text-right">
+            {filtrationMoved ? `Y${yellowFilter} M${magentaFilter} C${cyanFilter}` : 'neutri'}
+          </span>
+          <span className="text-neutral-500">Lastra</span>
+          <span className="text-white text-right uppercase">{devStage}</span>
+        </div>
+      </div>
+
+      {/* Remaining steps, collapsed */}
+      <div className="space-y-1.5">
+        <span className="font-mono text-[10px] text-neutral-500 uppercase tracking-wider block">
+          Prossimi passi
+        </span>
+        {steps
+          .filter((s) => s.n > step)
+          .map((s) => (
+            <div key={s.n} className="flex items-center gap-2 text-[11px] text-neutral-500">
+              <span className="w-4 h-4 rounded-full border border-neutral-800 text-neutral-600 text-[9px] flex items-center justify-center shrink-0">
+                {s.n}
+              </span>
+              <span>{s.title}</span>
+            </div>
+          ))}
+        {step === 5 && (
+          <p className="text-[10.5px] text-emerald-400">Processo completato — esporta o butta la lastra per ricominciare.</p>
+        )}
+      </div>
+
+      {filtrationMoved && !isColorMode && (
+        <div className="text-[10px] text-neutral-500 leading-relaxed border-t border-neutral-900 pt-3">
+          Suggerimento: in B&amp;N prova prima il grado, poi regola la densità col
+          tempo di esposizione e col diaframma. Filtri e tempo si compensano.
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onExit }) => {
   // Durst Enlarger Head Settings (CLS 501 Dichroic Head)
   const [yellowFilter, setYellowFilter] = useState<number>(0); // 0 - 130 (lowers contrast / yellow)
@@ -429,6 +682,8 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
    * tray canvas, which shares the same drawing routine.
    */
   const [inspectionSnapshot, setInspectionSnapshot] = useState<string | null>(null);
+  /** Guided walkthrough sidebar. On by default so nobody faces a blank easel. */
+  const [showTutorial, setShowTutorial] = useState<boolean>(true);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const paperCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -1328,6 +1583,20 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
 
         {/* Safelight, Sound & Exit */}
         <div className="flex items-center gap-4">
+          {/* Tutorial toggle */}
+          <button
+            onClick={() => setShowTutorial(!showTutorial)}
+            className={`px-2.5 py-1.5 rounded text-xs font-mono flex items-center gap-1.5 transition-colors border ${
+              showTutorial
+                ? 'bg-amber-400 text-neutral-950 font-bold border-amber-400'
+                : 'bg-black/60 border-neutral-800 text-neutral-400 hover:text-white'
+            }`}
+            title="Mostra o nascondi la guida passo passo"
+          >
+            <HelpCircle className="w-4 h-4" />
+            Guida
+          </button>
+
           {/* Sound Toggle */}
           <button
             onClick={() => setSoundEnabled(!soundEnabled)}
@@ -1902,6 +2171,24 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
           />
           )}
         </div>
+
+        {/* Right Column: guided walkthrough */}
+        {showTutorial && (
+          <TutorialPanel
+            activeSide={activeSide}
+            devStage={devStage}
+            isLampOn={isLampOn}
+            exposureHistorySeconds={exposureHistorySeconds}
+            yellowFilter={yellowFilter}
+            magentaFilter={magentaFilter}
+            cyanFilter={cyanFilter}
+            selectedGrade={selectedGrade}
+            aperture={aperture}
+            isColorMode={isColorMode}
+            onClose={() => setShowTutorial(false)}
+            onGoToSide={(side) => setActiveSide(side)}
+          />
+        )}
       </div>
 
       {/* Full-screen inspection of the developed sheet */}
