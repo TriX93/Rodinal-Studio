@@ -2,6 +2,7 @@ import React from 'react';
 import { X, Monitor, Terminal, Laptop, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { getElectronAPI } from '../types/film';
 
+
 interface DesktopModalProps {
   isOpen: boolean;
   onClose: () => void;

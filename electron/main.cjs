@@ -23,6 +23,7 @@ function createWindow() {
     minHeight: 720,
     backgroundColor: '#08080a',
     title: 'Rodinal Studio - RAW Film Inverter & Archiver',
+    icon: path.join(__dirname, '../build/icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,

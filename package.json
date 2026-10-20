@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "desktop": "electron electron/main.cjs",
     "desktop:dist": "vite build && electron electron/main.cjs",
+    "build:icons": "electron scripts/render-icons.cjs",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
   },
@@ -43,7 +44,9 @@
     "directories": {
       "output": "release"
     },
+    "icon": "build/icon.png",
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         {
           "target": "nsis",

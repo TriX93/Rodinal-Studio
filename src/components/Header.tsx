@@ -1,6 +1,7 @@
 import React from 'react';
 import { Download, Cpu, Sparkles, Layers, Info, Monitor, Flame, Scale } from 'lucide-react';
 import { HardwareEngineState, getElectronAPI } from '../types/film';
+import { DarkroomIcon } from './DarkroomIcon';
 
 interface HeaderProps {
   hardwareState: HardwareEngineState;
@@ -25,18 +26,18 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const isDesktop = Boolean(getElectronAPI()?.isDesktop);
   return (
-    <header className="flex items-center justify-between gap-8 px-6 py-3.5 bg-neutral-950 border-b border-neutral-800/80 text-neutral-100 select-none z-30">
-      {/* Zone 1: Single text element wordmark */}
+    <header className="flex items-center justify-between gap-8 px-6 py-3 bg-neutral-950 border-b border-neutral-800/80 text-neutral-100 select-none z-30">
+      {/* Zone 1: Skeuomorphic Darkroom Branding & Wordmark */}
       <div className="flex items-center gap-3 shrink-0">
-        <div className="w-7 h-7 rounded bg-amber-500/20 border border-amber-500/50 flex items-center justify-center text-amber-400 font-bold text-[11px] font-mono tracking-wider">
-          R-09
+        <div className="relative flex items-center justify-center p-0.5 rounded-lg bg-neutral-900/90 border border-neutral-800 shadow-md group transition-all hover:border-neutral-700">
+          <DarkroomIcon className="w-8.5 h-8.5 drop-shadow transition-transform duration-200 group-hover:scale-105" />
         </div>
         <span className="text-base font-semibold tracking-tight text-white whitespace-nowrap">
           Rodinal Studio
         </span>
       </div>
 
-      {/* Zone 2: 4-5 concise single-line text navigation links */}
+      {/* Zone 2: Concise single-line text navigation links */}
       <nav className="hidden md:flex items-center gap-6 text-xs font-medium text-neutral-400">
         <button
           onClick={() => setActiveTab('inversion')}
