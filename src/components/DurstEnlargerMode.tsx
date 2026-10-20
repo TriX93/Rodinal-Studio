@@ -398,7 +398,13 @@ const ACTION_FEEDBACK: Record<string, { label: string; effect: string; tone: 'co
   colorMode: { label: 'Modalità', effect: 'B&N multigrade o stampa colore C-41: cambia come i filtri agiscono.', tone: 'colour' },
   exposure: { label: 'Esposizione', effect: 'Luce accumulata: poca = lastra chiara, tanta = lastra scura.', tone: 'bright' },
   devTime: { label: 'Sviluppo', effect: 'Il tempo in vasca costruisce la densità; oltre il tempo giusto sale anche il velo.', tone: 'bright' },
-  agitate: { label: 'Agitazione', effect: 'Rinnova il rivelatore a contatto con l\'emulsione: sviluppo più uniforme.', tone: 'bright' }
+  agitate: { label: 'Agitazione', effect: 'Rinnova il rivelatore a contatto con l\'emulsione: sviluppo più uniforme.', tone: 'bright' },
+  paperLoad: { label: 'Carta sull\'easel', effect: 'Senza carta componi sulla baseboard nuda; con la carta carica la luce espone davvero.', tone: 'colour' },
+  tiltX: { label: 'Tilt verticale', effect: 'Inclina l\'asse ottico: la proiezione si deforma a trapezio (keystone verticale).', tone: 'optic' },
+  tiltY: { label: 'Tilt orizzontale', effect: 'Inclina l\'asse di lato: le righe della proiezione si sfasano (keystone orizzontale).', tone: 'optic' },
+  shiftX: { label: 'Shift orizzontale', effect: 'Sposta la proiezione di lato senza toccare la colonna: utile per ricomporre il taglio.', tone: 'optic' },
+  shiftY: { label: 'Shift verticale', effect: 'Sposta la proiezione in alto o in basso senza muovere l\'ingranditore.', tone: 'optic' },
+  headReset: { label: 'Testa azzerata', effect: 'Tilt e shift tornano neutri: proiezione di nuovo rettangolare e centrata.', tone: 'optic' }
 };
 
 const TONE_COLOUR: Record<string, string> = {
@@ -457,6 +463,8 @@ const TutorialPanel: React.FC<TutorialPanelProps> = ({
             <li><strong>Ingrandimento</strong> — scala la proiezione attorno all'asse lente.</li>
             <li><strong>Messa a fuoco</strong> — «Critico» per una lastra nitida.</li>
             <li><strong>Colonna</strong> — non zooma, cambia solo la luce totale.</li>
+            <li><strong>Tilt &amp; shift</strong> — inclina o sposta la testa: la proiezione si deforma a trapezio o si decentra.</li>
+            <li><strong>Nessuna carta</strong> — spegni la carta per comporre sulla baseboard nuda senza consumare fogli.</li>
           </ul>
         </>
       )
@@ -483,6 +491,12 @@ const TutorialPanel: React.FC<TutorialPanelProps> = ({
             Premia <strong>Expose Print</strong> col timer impostato. La
             <em> esposizione accumulata</em> in alto è la tua densità: poca = lastra
             chiara, tanta = lastra scura.
+          </p>
+          <p className="mt-1.5">
+            <strong>Test strip</strong>: attiva il generatore e vedrai un cartoncino
+            nero scorrere sull'easel, banda per banda, con il tempo di ogni banda
+            scritto sulla lastra. Serve a capire l'esposizione giusta senza bruciare
+            un foglio intero.
           </p>
         </>
       )
@@ -688,8 +702,30 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
   const [focusOffset, setFocusOffset] = useState<number>(0); // -1 .. 1
   /** Pivot for magnification, as normalized easel coords (the lens axis). */
   const [lensPivot, setLensPivot] = useState<{ x: number; y: number }>({ x: 0.5, y: 0.5 });
+  /**
+   * Head tilt and shift, in the manner of a perspective-control lens. Tilt
+   * angles the optical axis so the projected rectangle becomes a keystone,
+   * exactly the geometry correction (or deliberate distortion) a tilting head
+   * gives. Shift slides the projection sideways without moving the enlarger.
+   */
+  const [headTiltX, setHeadTiltX] = useState<number>(0); // -1 .. 1, vertical tilt
+  const [headTiltY, setHeadTiltY] = useState<number>(0); // -1 .. 1, horizontal tilt
+  const [headShiftX, setHeadShiftX] = useState<number>(0); // -1 .. 1, normalized
+  const [headShiftY, setHeadShiftY] = useState<number>(0); // -1 .. 1, normalized
   const [redSafetyFilterSwungIn, setRedSafetyFilterSwungIn] = useState<boolean>(false);
   const [testStripMode, setTestStripMode] = useState<boolean>(false);
+  /**
+   * Whether a sheet is actually on the easel. Composition and focusing are far
+   * easier with no paper in the way, so the head can project onto the bare
+   * baseboard; no paper means no exposure is recorded.
+   */
+  const [hasPaper, setHasPaper] = useState<boolean>(true);
+  /**
+   * Position of the black card during a test strip, 0..1 across the sheet.
+   * Only meaningful while a strip exposure is running.
+   */
+  const [stripCardPos, setStripCardPos] = useState<number>(0);
+  const [isStripRunning, setIsStripRunning] = useState<boolean>(false);
   const [paperType, setPaperType] = useState<PaperType>('ilford-fb-warmtone');
   const [isColorMode, setIsColorMode] = useState<boolean>(scan.settings.filmType === 'color-negative');
 
@@ -895,10 +931,23 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
     let elapsed = 0;
     const totalMs = timerDuration * 1000;
 
+    // A test strip sweeps a black card across the sheet in five bands. The card
+    // starts fully covering the paper and is drawn back one band at a time, so
+    // the user sees exactly which band is being exposed at each moment.
+    if (testStripMode) {
+      setIsStripRunning(true);
+      setStripCardPos(0);
+    }
+
     const timerInterval = setInterval(() => {
       elapsed += interval;
       const left = Math.max(0, (totalMs - elapsed) / 1000);
       setTimeRemaining(Number(left.toFixed(1)));
+
+      // Drive the card across the five bands, mirroring the elapsed time.
+      if (testStripMode) {
+        setStripCardPos(Math.min(1, elapsed / totalMs));
+      }
 
       if (Math.floor(elapsed / 1000) !== Math.floor((elapsed - interval) / 1000)) {
         playSound('tick');
@@ -907,11 +956,13 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
       if (elapsed >= totalMs) {
         clearInterval(timerInterval);
         setIsLampOn(false);
+        setIsStripRunning(false);
+        setStripCardPos(0);
         playSound('relay-off');
         playSound('beep');
         
         // If red filter was NOT swung in, the paper received photographic actinic light!
-        if (!redSafetyFilterSwungIn) {
+        if (!redSafetyFilterSwungIn && hasPaper) {
           const effectiveLightFactor = Math.pow(8 / aperture, 2) * Math.pow(10 / columnHeight, 1.5);
           const addedExp = timerDuration * effectiveLightFactor;
           setExposureHistorySeconds(prev => prev + addedExp);
@@ -980,6 +1031,7 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
     setIsPaperFogged(false);
     setIsInspecting(false);
     setInspectionSnapshot(null);
+    setHasPaper(true);
     playSound('slosh');
   };
 
@@ -1064,7 +1116,12 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
       else if (paperType === 'agfa-brovira') paperBaseColor = '#f5f5f4'; // neutral cool
       else if (paperType === 'kodak-ektacolor') paperBaseColor = '#ffffff';
 
-      // Draw paper base in easel
+      // With no sheet on the easel the baseboard itself is showing: a dark
+      // matte surface, so composition and focusing can be checked without
+      // committing (or wasting) a sheet of paper.
+      if (!hasPaper) paperBaseColor = '#2a2a2e';
+
+      // Draw paper base in easel (or the bare baseboard when no paper is loaded)
       ctx.fillStyle = paperBaseColor;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -1075,15 +1132,17 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
       ctx.fillRect(0, 0, 32, canvas.height);
       ctx.fillRect(canvas.width - 32, 0, 32, canvas.height);
 
-      // Paper grain texture
-      ctx.fillStyle = 'rgba(0,0,0,0.02)';
-      for (let i = 0; i < 400; i++) {
-        ctx.fillRect(
-          32 + Math.random() * (canvas.width - 64),
-          32 + Math.random() * (canvas.height - 64),
-          1.5,
-          1.5
-        );
+      // Paper grain texture (only where there is actually paper)
+      if (hasPaper) {
+        ctx.fillStyle = 'rgba(0,0,0,0.02)';
+        for (let i = 0; i < 400; i++) {
+          ctx.fillRect(
+            32 + Math.random() * (canvas.width - 64),
+            32 + Math.random() * (canvas.height - 64),
+            1.5,
+            1.5
+          );
+        }
       }
 
       const printWidth = canvas.width - 64;
@@ -1180,8 +1239,8 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
       // legible enough to compose and refocus.
       const blurPx = Math.round(defocus * 14);
 
-      // Draw the projected negative through the lens: magnified about the pivot
-      // and translated, then optionally softened by defocus.
+      // Draw the projected negative through the lens: magnified about the pivot,
+      // shifted, tilted (keystone) and optionally softened by defocus.
       const drawProjection = () => {
         ctx.save();
         // Clip to the paper area so magnification crops at the easel blades,
@@ -1201,7 +1260,45 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
         ctx.scale(magnification, magnification);
         ctx.translate(-px, -py);
 
-        ctx.drawImage(offCanvas, 32, 32);
+        // Head shift: slides the whole projection across the baseboard.
+        ctx.translate(headShiftX * printWidth * 0.5, headShiftY * printHeight * 0.5);
+
+        const tiltActive = Math.abs(headTiltX) > 0.001 || Math.abs(headTiltY) > 0.001;
+
+        if (!tiltActive) {
+          ctx.drawImage(offCanvas, 32, 32);
+        } else {
+          /**
+           * Keystone from a tilted head. Canvas 2D has no perspective matrix,
+           * so the projection is drawn as a stack of horizontal slices whose
+           * width varies with their height (a trapezoid). Vertical tilt makes
+           * the near edge wider; horizontal tilt skews the rows sideways,
+           * giving the same geometry a tilting lens produces.
+           */
+          const slices = 40;
+          const sliceH = printHeight / slices;
+          for (let s = 0; s < slices; s++) {
+            const v = s / (slices - 1); // 0 at top, 1 at bottom
+            // Vertical tilt: rows near one edge scale up.
+            const verticalScale = 1 + headTiltX * 0.35 * (v - 0.5) * 2;
+            // Horizontal tilt: rows shear sideways.
+            const shearX = headTiltY * 0.35 * (v - 0.5) * 2 * printWidth;
+            const srcSliceH = printHeight / slices + 1;
+            const destW = printWidth * verticalScale;
+
+            ctx.drawImage(
+              offCanvas,
+              0,
+              s * srcSliceH,
+              printWidth,
+              srcSliceH,
+              32 + (printWidth - destW) / 2 + shearX,
+              32 + s * sliceH,
+              destW,
+              sliceH + 1
+            );
+          }
+        }
 
         ctx.filter = 'none';
         ctx.restore();
@@ -1232,6 +1329,80 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
           ctx.fillStyle = '#f8fafc';
           ctx.fillRect(32, 32, printWidth, printHeight);
         }
+      }
+
+      // Test-strip black card. A real test strip is made by holding a card over
+      // the sheet and drawing it back a band at a time, so each band gets a
+      // different slice of the total time. Here the card covers the bands not
+      // yet uncovered, and the band being exposed right now is called out with
+      // the seconds it is receiving.
+      if (testStripMode && isStripRunning) {
+        const bands = 5;
+        const bandW = printWidth / bands;
+        // How many whole bands have been uncovered so far, plus the fraction of
+        // the current one. The card's right edge sits here.
+        const uncovered = stripCardPos * bands;
+
+        // Darkness over the still-covered bands.
+        ctx.fillStyle = 'rgba(3, 3, 5, 0.94)';
+        const coveredFrom = uncovered * bandW;
+        if (coveredFrom < printWidth) {
+          ctx.fillRect(32 + coveredFrom, 32, printWidth - coveredFrom, printHeight);
+        }
+
+        // The card itself, with a highlight edge so it reads as a physical card.
+        const edgeX = 32 + uncovered * bandW;
+        const cardH = printHeight + 24;
+        ctx.fillStyle = '#0a0a0c';
+        ctx.fillRect(edgeX, 32 - 12, printWidth - uncovered * bandW + bandW, cardH);
+        ctx.fillStyle = 'rgba(120, 120, 130, 0.9)';
+        ctx.fillRect(edgeX, 32 - 12, 2, cardH);
+        ctx.fillStyle = 'rgba(200, 200, 210, 0.7)';
+        ctx.font = '9px monospace';
+        ctx.fillText('CARTONCINO NERO', edgeX + 6, 32 - 2);
+
+        // Band dividers and per-band time labels. Drawn over the card so every
+        // band's timing stays legible while the strip is being made.
+        ctx.font = '10px monospace';
+        for (let b = 0; b < bands; b++) {
+          const bx = 32 + b * bandW;
+          const bandDone = uncovered >= b + 1;
+          const bandNow = !bandDone && uncovered > b;
+
+          // Divider
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(bx, 32);
+          ctx.lineTo(bx, 32 + printHeight);
+          ctx.stroke();
+
+          // Each band's slice of the total exposure. This is the number the user
+          // needs: what that band will have actually received.
+          const bandSeconds = (timerDuration / bands) * (b + 1);
+          ctx.fillStyle = bandDone
+            ? 'rgba(52, 211, 153, 0.95)'
+            : bandNow
+              ? 'rgba(251, 191, 36, 1)'
+              : 'rgba(148, 163, 184, 0.6)';
+          const label = `${bandSeconds.toFixed(1)}s`;
+          ctx.fillText(label, bx + bandW / 2 - ctx.measureText(label).width / 2, 32 + printHeight - 10);
+          // Small band number at the top of each column.
+          const bn = `${b + 1}`;
+          ctx.fillText(bn, bx + bandW / 2 - ctx.measureText(bn).width / 2, 46);
+        }
+
+        // Live banner: which band is being exposed and for how long.
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+        ctx.fillRect(32, 32, 240, 22);
+        ctx.fillStyle = '#fbbf24';
+        ctx.font = 'bold 11px monospace';
+        const nowBand = Math.min(bands - 1, Math.floor(uncovered));
+        ctx.fillText(
+          `BANDA ${nowBand + 1}/5 · ${(timerDuration / bands * (nowBand + 1)).toFixed(1)}s`,
+          40,
+          47
+        );
       }
 
       // Render Dodging / Burning indicator overlays
@@ -1404,7 +1575,14 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
     paperType,
     showGrainScope,
     grainScopePos,
-    dodgeBurnZones
+    dodgeBurnZones,
+    headTiltX,
+    headTiltY,
+    headShiftX,
+    headShiftY,
+    hasPaper,
+    stripCardPos,
+    isStripRunning
   ]);
 
   // Chemical Tray Developer Canvas (Wet Bench Rendering)
@@ -1921,7 +2099,29 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
             <span className="font-mono text-amber-400 font-bold tracking-wider text-[11px] block">
               PHOTOGRAPHIC PAPER EMULSION
             </span>
-            <div className="grid grid-cols-2 gap-1.5">
+
+            {/* Load / remove the sheet. Composition and focusing are easier on a
+                bare baseboard, and there is no point wasting paper to do it. */}
+            <div className="flex items-center justify-between pb-1 border-b border-neutral-850">
+              <div>
+                <div className="font-semibold text-white text-[11px]">Carta sull'easel</div>
+                <div className="text-[10px] text-neutral-400">
+                  {hasPaper ? 'Foglio caricato' : 'Baseboard nudo — solo composizione'}
+                </div>
+              </div>
+              <button
+                onClick={() => { setHasPaper(!hasPaper); noteAction('paperLoad'); }}
+                className={`px-3 py-1 rounded text-[11px] font-mono transition-colors ${
+                  hasPaper
+                    ? 'bg-emerald-500 text-neutral-950 font-bold shadow'
+                    : 'bg-neutral-800 text-neutral-400 hover:text-white'
+                }`}
+              >
+                {hasPaper ? 'CARICATA' : 'NESSUNA'}
+              </button>
+            </div>
+
+            <div className={`grid grid-cols-2 gap-1.5 ${hasPaper ? '' : 'opacity-40 pointer-events-none'}`}>
               {[
                 { id: 'ilford-fb-warmtone', name: 'Ilford FB Warmtone', desc: 'Baryta Fiber Base' },
                 { id: 'ilford-rc-glossy', name: 'Ilford RC Deluxe', desc: 'Pearl Neutral Tone' },
@@ -2108,10 +2308,13 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
             <div className="flex items-center justify-between pt-1">
               <div>
                 <div className="font-semibold text-white text-[11px]">Test Strip Generator</div>
-                <div className="text-[10px] text-neutral-400">Split into 5 exposure steps</div>
+                <div className="text-[10px] text-neutral-400">
+                  {isStripRunning ? 'Cartoncino in movimento…' : '5 bande · cartoncino nero animato'}
+                </div>
               </div>
               <button
                 onClick={() => setTestStripMode(!testStripMode)}
+                disabled={isStripRunning}
                 className={`px-3 py-1 rounded text-[11px] font-mono transition-colors ${
                   testStripMode
                     ? 'bg-amber-400 text-neutral-950 font-bold shadow'
@@ -2120,6 +2323,51 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
               >
                 {testStripMode ? 'ACTIVE' : 'OFF'}
               </button>
+            </div>
+
+            {/* Head Tilt & Shift (perspective control) */}
+            <div className="pt-2 border-t border-neutral-850 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-white text-[11px]">Testa basculante (tilt &amp; shift)</span>
+                <button
+                  onClick={() => {
+                    setHeadTiltX(0); setHeadTiltY(0); setHeadShiftX(0); setHeadShiftY(0);
+                    noteAction('headReset');
+                  }}
+                  className="px-2 py-0.5 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-[9.5px] font-mono transition-colors"
+                  title="Riporta la testa a zero"
+                >
+                  Azzera
+                </button>
+              </div>
+
+              {[
+                { label: 'Tilt verticale', value: headTiltX, set: setHeadTiltX, id: 'tiltX' },
+                { label: 'Tilt orizzontale', value: headTiltY, set: setHeadTiltY, id: 'tiltY' },
+                { label: 'Shift orizzontale', value: headShiftX, set: setHeadShiftX, id: 'shiftX' },
+                { label: 'Shift verticale', value: headShiftY, set: setHeadShiftY, id: 'shiftY' }
+              ].map((c) => (
+                <div key={c.id}>
+                  <div className="flex justify-between font-mono text-[10.5px] mb-0.5">
+                    <span className="text-neutral-400">{c.label}</span>
+                    <span className="text-white font-mono">{c.value.toFixed(2)}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="-1"
+                    max="1"
+                    step="0.01"
+                    value={c.value}
+                    onChange={(e) => { c.set(parseFloat(e.target.value)); noteAction(c.id); }}
+                    className="w-full accent-amber-400 h-1.5 bg-neutral-800 rounded"
+                  />
+                </div>
+              ))}
+              <p className="text-[9.5px] text-neutral-500 leading-snug">
+                Tilt inclina l'asse ottico: la proiezione diventa un trapezio (keystone).
+                Shift sposta l'immagine senza muovere la colonna. Componi senza carta per
+                vedere bene la geometria.
+              </p>
             </div>
           </div>
 
@@ -2162,16 +2410,29 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
             {/* EXPOSE FOOT PEDAL BUTTON */}
             <button
               onClick={triggerExposure}
-              disabled={isLampOn}
+              disabled={isLampOn || !hasPaper}
               className={`w-full py-3 rounded-lg font-bold text-sm tracking-wider uppercase flex items-center justify-center gap-2 shadow-xl transition-transform active:scale-95 ${
                 isLampOn
                   ? 'bg-yellow-400 text-neutral-950 animate-pulse'
-                  : 'bg-red-600 hover:bg-red-500 text-white cursor-pointer'
+                  : !hasPaper
+                    ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed'
+                    : 'bg-red-600 hover:bg-red-500 text-white cursor-pointer'
               }`}
             >
               <Zap className="w-4 h-4" />
-              <span>{isLampOn ? 'Enlarger Lamp Active' : 'Expose Print (Footswitch)'}</span>
+              <span>
+                {isLampOn
+                  ? 'Enlarger Lamp Active'
+                  : !hasPaper
+                    ? 'Nessuna carta sull\'easel'
+                    : 'Expose Print (Footswitch)'}
+              </span>
             </button>
+            {!hasPaper && (
+              <p className="text-[9.5px] text-neutral-500 text-center leading-snug">
+                La baseboard è nuda per comporre: carica un foglio per esporre.
+              </p>
+            )}
           </div>
         </div>
 
@@ -2239,8 +2500,20 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
             />
 
             {/* Status overlay */}
-            <div className="absolute top-2 right-2 px-2.5 py-1 bg-black/80 backdrop-blur-xs rounded text-[10px] font-mono text-neutral-300">
-              {isLampOn ? (redSafetyFilterSwungIn ? 'RED SAFETY PROJECTION' : 'ACTINIC EXPOSURE') : 'PAPER EASEL (STANDBY)'}
+            <div className="absolute top-2 right-2 flex items-center gap-2">
+              {!hasPaper && (
+                <div className="px-2.5 py-1 bg-amber-950/90 border border-amber-800 rounded text-[10px] font-mono text-amber-300">
+                  NESSUNA CARTA · COMPOSIZIONE
+                </div>
+              )}
+              {isStripRunning && (
+                <div className="px-2.5 py-1 bg-amber-400 rounded text-[10px] font-mono text-neutral-950 font-bold animate-pulse">
+                  TEST STRIP IN CORSO
+                </div>
+              )}
+              <div className="px-2.5 py-1 bg-black/80 backdrop-blur-xs rounded text-[10px] font-mono text-neutral-300">
+                {isLampOn ? (redSafetyFilterSwungIn ? 'RED SAFETY PROJECTION' : 'ACTINIC EXPOSURE') : hasPaper ? 'PAPER EASEL (STANDBY)' : 'BASEBOARD (STANDBY)'}
+              </div>
             </div>
 
             {/* Dodging / Burning Tool selector floating pill */}
