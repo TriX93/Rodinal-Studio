@@ -371,9 +371,42 @@ interface TutorialPanelProps {
   selectedGrade: MultigradeGrade;
   aperture: number;
   isColorMode: boolean;
+  lastAction: { id: string; at: number } | null;
   onClose: () => void;
   onGoToSide: (side: 'projection' | 'chemistry') => void;
 }
+
+/**
+ * What each control does to the finished print, phrased as a reaction to the
+ * user moving it. This is the bit the static step text cannot give: the guide
+ * answers "I just turned this knob - so what?".
+ */
+const ACTION_FEEDBACK: Record<string, { label: string; effect: string; tone: 'contrast' | 'bright' | 'colour' | 'optic' }> = {
+  yellowUp: { label: 'Giallo ↑', effect: 'Meno blu in arrivo sulla carta: contrasto in calo, alte luci più morbide.', tone: 'contrast' },
+  yellowDown: { label: 'Giallo ↓', effect: 'Più blu in arrivo: contrasto in salita.', tone: 'contrast' },
+  magentaUp: { label: 'Magenta ↑', effect: 'Meno verde: contrasto in salita, neri più profondi.', tone: 'contrast' },
+  magentaDown: { label: 'Magenta ↓', effect: 'Più verde: contrasto in calo.', tone: 'contrast' },
+  cyanUp: { label: 'Cyan ↑', effect: 'Meno rosso: densità e bilanciamento del mascheramento arancione.', tone: 'colour' },
+  cyanDown: { label: 'Cyan ↓', effect: 'Più rosso nella luce: utile per correggere una dominante.', tone: 'colour' },
+  grade: { label: 'Grado multigrade', effect: 'Imposta i filtri Y/M per te: gradi alti = più contrasto.', tone: 'contrast' },
+  apertureUp: { label: 'Diaframma ↑', effect: 'Meno luce arriva: serve più tempo, ma più profondità di fuoco.', tone: 'optic' },
+  apertureDown: { label: 'Diaframma ↓', effect: 'Più luce: esposizioni brevi, ma il fuoco diventa critico.', tone: 'optic' },
+  timer: { label: 'Timer', effect: 'La densità della stampa è la luce totale: tempo × apertura × filtro.', tone: 'bright' },
+  magnify: { label: 'Ingrandimento', effect: 'Scala attorno all\'asse lente: ingrandendo si ritaglia, non si riempie.', tone: 'optic' },
+  focus: { label: 'Messa a fuoco', effect: 'Guarda il Gran Finder: il grano è nitido solo a fuoco critico.', tone: 'optic' },
+  paper: { label: 'Carta', effect: 'Cambia tono e risposta dell\'emulsione: Br/BT, RC, colore.', tone: 'colour' },
+  colorMode: { label: 'Modalità', effect: 'B&N multigrade o stampa colore C-41: cambia come i filtri agiscono.', tone: 'colour' },
+  exposure: { label: 'Esposizione', effect: 'Luce accumulata: poca = lastra chiara, tanta = lastra scura.', tone: 'bright' },
+  devTime: { label: 'Sviluppo', effect: 'Il tempo in vasca costruisce la densità; oltre il tempo giusto sale anche il velo.', tone: 'bright' },
+  agitate: { label: 'Agitazione', effect: 'Rinnova il rivelatore a contatto con l\'emulsione: sviluppo più uniforme.', tone: 'bright' }
+};
+
+const TONE_COLOUR: Record<string, string> = {
+  contrast: 'text-pink-400 border-pink-900/60 bg-pink-950/20',
+  bright: 'text-amber-400 border-amber-900/60 bg-amber-950/20',
+  colour: 'text-cyan-400 border-cyan-900/60 bg-cyan-950/20',
+  optic: 'text-sky-400 border-sky-900/60 bg-sky-950/20'
+};
 
 /**
  * Guided walkthrough for the darkroom. The simulation hides a lot of physics
@@ -392,6 +425,7 @@ const TutorialPanel: React.FC<TutorialPanelProps> = ({
   selectedGrade,
   aperture,
   isColorMode,
+  lastAction,
   onClose,
   onGoToSide
 }) => {
@@ -582,6 +616,23 @@ const TutorialPanel: React.FC<TutorialPanelProps> = ({
         </div>
       </div>
 
+      {/* "What just changed" — reacts to the last control the user touched */}
+      {lastAction && ACTION_FEEDBACK[lastAction.id] && (
+        <div
+          className={`rounded-xl border p-3.5 space-y-1 ${TONE_COLOUR[ACTION_FEEDBACK[lastAction.id].tone]}`}
+        >
+          <div className="flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span className="font-mono text-[10px] uppercase tracking-wider">
+              Hai appena mosso: {ACTION_FEEDBACK[lastAction.id].label}
+            </span>
+          </div>
+          <p className="text-neutral-300 text-[11px] leading-relaxed">
+            {ACTION_FEEDBACK[lastAction.id].effect}
+          </p>
+        </div>
+      )}
+
       {/* Remaining steps, collapsed */}
       <div className="space-y-1.5">
         <span className="font-mono text-[10px] text-neutral-500 uppercase tracking-wider block">
@@ -684,6 +735,14 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
   const [inspectionSnapshot, setInspectionSnapshot] = useState<string | null>(null);
   /** Guided walkthrough sidebar. On by default so nobody faces a blank easel. */
   const [showTutorial, setShowTutorial] = useState<boolean>(true);
+  /**
+   * Last control the user touched, and when. Lets the guide say what just
+   * changed and what it does to the print, without the user having to guess.
+   */
+  const [lastAction, setLastAction] = useState<{ id: string; at: number } | null>(null);
+  const noteAction = useCallback((id: string) => {
+    setLastAction({ id, at: Date.now() });
+  }, []);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const paperCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -793,6 +852,7 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
   // Durst Dichroic mixing head filters for Multigrade paper
   const applyMultigradeGrade = (grade: MultigradeGrade) => {
     setSelectedGrade(grade);
+    noteAction('grade');
     switch (grade) {
       case '00': // Extra Soft
         setYellowFilter(115);
@@ -829,6 +889,7 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
     setIsLampOn(true);
     setTimeRemaining(timerDuration);
     playSound('relay-on');
+    noteAction('exposure');
 
     const interval = 100; // 100ms ticks
     let elapsed = 0;
@@ -926,6 +987,7 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
   const handleRockTank = (tank: 'developer' | 'stop' | 'fix') => {
     setAgitationRipples(prev => prev + 1);
     playSound('slosh');
+    noteAction('agitate');
     if (tank === 'developer' && devStage === 'developing') {
       setDevTimeSeconds(prev => Math.min(60, prev + 2));
     }
@@ -1218,37 +1280,109 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
       if (showGrainScope) {
         const gx = 32 + grainScopePos.x * printWidth;
         const gy = 32 + grainScopePos.y * printHeight;
+        const loupeR = 48;
 
-        // Circular reticle
+        // Magnified patch of the projected negative under the loupe. A real
+        // finder shows image structure plus grain, not a blank disc, so the
+        // patch is sampled from the same buffer the easel draws.
+        ctx.save();
         ctx.beginPath();
-        ctx.arc(gx, gy, 48, 0, Math.PI * 2);
-        ctx.fillStyle = '#050505';
-        ctx.fill();
+        ctx.arc(gx, gy, loupeR, 0, Math.PI * 2);
+        ctx.clip();
+        const zoom = 8;
+        ctx.drawImage(
+          offCanvas,
+          gx - 32 - (loupeR * 2) / zoom / 2,
+          gy - 32 - (loupeR * 2) / zoom / 2,
+          (loupeR * 2) / zoom,
+          (loupeR * 2) / zoom,
+          gx - loupeR,
+          gy - loupeR,
+          loupeR * 2,
+          loupeR * 2
+        );
+        ctx.restore();
+
+        // Grain field. Deliberately deterministic: the same point always shows
+        // the same grain, otherwise the field twinkles and you cannot judge
+        // focus at all. Each particle's size and alpha come from a hash of its
+        // index, and sharpness follows the lens, so the grain snaps into
+        // definition only at critical focus.
+        const withinTolerance = Math.abs(focusOffset) <= focusTolerance;
+        const grainSharpness = withinTolerance
+          ? 1
+          : Math.max(0.45, 1 - Math.min(1, Math.abs(focusOffset) / 1.0) * 0.55);
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(gx, gy, loupeR, 0, Math.PI * 2);
+        ctx.clip();
+
+        // Hash-based pseudo random, stable for a given position and particle.
+        const hash = (n: number) => {
+          const s = Math.sin(n * 12.9898 + grainScopePos.x * 78.233 + grainScopePos.y * 37.719) * 43758.5453;
+          return s - Math.floor(s);
+        };
+
+        // Defocused grain spreads into a soft blur; sharp grain is a crisp dot.
+        const grainBlur = Math.max(0, (1 - grainSharpness) * 2.4);
+        const dots = 220;
+        for (let p = 0; p < dots; p++) {
+          const a = hash(p * 3.1) * Math.PI * 2;
+          const r = Math.sqrt(hash(p * 7.7)) * (loupeR - 6);
+          const px = gx + Math.cos(a) * r;
+          const py = gy + Math.sin(a) * r;
+          const size = 0.9 + hash(p * 5.3) * 1.6;
+          const alpha = (0.35 + hash(p * 9.9) * 0.5) * grainSharpness;
+
+          ctx.fillStyle = `rgba(255, 255, 255, ${alpha.toFixed(3)})`;
+          ctx.beginPath();
+          ctx.arc(px, py, size + grainBlur, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+
+        // Angular graticule, like the etched reticle in a Paterson finder.
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(gx - loupeR, gy);
+        ctx.lineTo(gx - loupeR + 16, gy);
+        ctx.moveTo(gx + loupeR - 16, gy);
+        ctx.lineTo(gx + loupeR, gy);
+        ctx.moveTo(gx, gy - loupeR);
+        ctx.lineTo(gx, gy - loupeR + 16);
+        ctx.moveTo(gx, gy + loupeR - 16);
+        ctx.lineTo(gx, gy + loupeR);
+        ctx.stroke();
+
+        // Lens barrel rim
+        ctx.beginPath();
+        ctx.arc(gx, gy, loupeR, 0, Math.PI * 2);
+        ctx.strokeStyle = '#0f172a';
+        ctx.lineWidth = 4;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(gx, gy, loupeR - 2, 0, Math.PI * 2);
         ctx.strokeStyle = '#38bdf8';
         ctx.lineWidth = 2;
         ctx.stroke();
 
-        // Crosshairs & focal indicator
-        ctx.beginPath();
-        ctx.moveTo(gx - 48, gy);
-        ctx.lineTo(gx + 48, gy);
-        ctx.moveTo(gx, gy - 48);
-        ctx.lineTo(gx, gy + 48);
-        ctx.strokeStyle = 'rgba(56, 189, 248, 0.6)';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-
-        // High magnification silver halide grain particles simulation
-        ctx.fillStyle = '#ffffff';
-        for (let p = 0; p < 60; p++) {
-          const ang = Math.random() * Math.PI * 2;
-          const rad = Math.random() * 40;
-          ctx.fillRect(gx + Math.cos(ang) * rad, gy + Math.sin(ang) * rad, 1.2, 1.2);
-        }
-
-        ctx.fillStyle = '#38bdf8';
+        // Focus verdict, read off the actual bellows position.
+        ctx.fillStyle = withinTolerance ? 'rgba(52, 211, 153, 0.95)' : 'rgba(251, 191, 36, 0.95)';
         ctx.font = '9px monospace';
-        ctx.fillText('CRITICAL GRAIN FOCUS', gx - 54, gy + 62);
+        const verdict = withinTolerance
+          ? 'GRAIN CRITICAL'
+          : focusOffset > 0
+            ? 'GRAIN SOFT · BACK'
+            : 'GRAIN SOFT · FRONT';
+        ctx.fillText(verdict, gx - ctx.measureText(verdict).width / 2, gy + loupeR + 14);
+
+        // Aperture hint: wide stops leave little depth of focus to find it in.
+        ctx.fillStyle = 'rgba(148, 163, 184, 0.8)';
+        ctx.font = '8px monospace';
+        const hint = `f/${aperture} · ${magnification.toFixed(2)}x`;
+        ctx.fillText(hint, gx - ctx.measureText(hint).width / 2, gy + loupeR + 25);
       }
     };
   }, [
@@ -1677,7 +1811,7 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
             {/* Mode: B&W Multigrade vs Color Printing */}
             <div className="flex rounded bg-neutral-900 p-0.5 border border-neutral-800">
               <button
-                onClick={() => setIsColorMode(false)}
+                onClick={() => { setIsColorMode(false); noteAction('colorMode'); }}
                 className={`flex-1 py-1 rounded text-[10.5px] font-mono transition-colors ${
                   !isColorMode ? 'bg-amber-400 text-neutral-950 font-bold' : 'text-neutral-400 hover:text-white'
                 }`}
@@ -1685,7 +1819,7 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
                 Multigrade B&amp;W
               </button>
               <button
-                onClick={() => setIsColorMode(true)}
+                onClick={() => { setIsColorMode(true); noteAction('colorMode'); }}
                 className={`flex-1 py-1 rounded text-[10.5px] font-mono transition-colors ${
                   isColorMode ? 'bg-amber-400 text-neutral-950 font-bold' : 'text-neutral-400 hover:text-white'
                 }`}
@@ -1706,7 +1840,9 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
                 max="130"
                 value={yellowFilter}
                 onChange={(e) => {
-                  setYellowFilter(parseInt(e.target.value));
+                  const v = parseInt(e.target.value);
+                  noteAction(v >= yellowFilter ? 'yellowUp' : 'yellowDown');
+                  setYellowFilter(v);
                   setSelectedGrade('custom');
                 }}
                 className="w-full accent-yellow-400 h-1.5 bg-neutral-800 rounded"
@@ -1725,7 +1861,9 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
                 max="130"
                 value={magentaFilter}
                 onChange={(e) => {
-                  setMagentaFilter(parseInt(e.target.value));
+                  const v = parseInt(e.target.value);
+                  noteAction(v >= magentaFilter ? 'magentaUp' : 'magentaDown');
+                  setMagentaFilter(v);
                   setSelectedGrade('custom');
                 }}
                 className="w-full accent-pink-400 h-1.5 bg-neutral-800 rounded"
@@ -1744,7 +1882,9 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
                 max="130"
                 value={cyanFilter}
                 onChange={(e) => {
-                  setCyanFilter(parseInt(e.target.value));
+                  const v = parseInt(e.target.value);
+                  noteAction(v >= cyanFilter ? 'cyanUp' : 'cyanDown');
+                  setCyanFilter(v);
                   setSelectedGrade('custom');
                 }}
                 className="w-full accent-cyan-400 h-1.5 bg-neutral-800 rounded"
@@ -1790,7 +1930,7 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
               ].map((p) => (
                 <button
                   key={p.id}
-                  onClick={() => setPaperType(p.id as PaperType)}
+                  onClick={() => { setPaperType(p.id as PaperType); noteAction('paper'); }}
                   className={`p-2 rounded text-left border transition-colors ${
                     paperType === p.id
                       ? 'border-amber-400 bg-amber-400/10 text-white'
@@ -1820,7 +1960,7 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
                 {[2.8, 4, 5.6, 8, 11, 16].map((f) => (
                   <button
                     key={f}
-                    onClick={() => setAperture(f)}
+                    onClick={() => { noteAction(f >= aperture ? 'apertureUp' : 'apertureDown'); setAperture(f); }}
                     className={`py-1 rounded font-mono text-[10.5px] transition-colors ${
                       aperture === f
                         ? 'bg-neutral-200 text-neutral-950 font-bold'
@@ -1864,7 +2004,7 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
                 max="3"
                 step="0.05"
                 value={magnification}
-                onChange={(e) => setMagnification(parseFloat(e.target.value))}
+                onChange={(e) => { noteAction('magnify'); setMagnification(parseFloat(e.target.value)); }}
                 className="w-full accent-amber-400 h-1.5 bg-neutral-800 rounded"
               />
               <div className="flex justify-between font-mono text-[9.5px] text-neutral-500 mt-0.5">
@@ -1906,7 +2046,7 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
                 max="1"
                 step="0.01"
                 value={focusOffset}
-                onChange={(e) => setFocusOffset(parseFloat(e.target.value))}
+                onChange={(e) => { noteAction('focus'); setFocusOffset(parseFloat(e.target.value)); }}
                 className="w-full accent-amber-400 h-1.5 bg-neutral-800 rounded"
               />
               <div className="flex items-center justify-between mt-1">
@@ -2014,7 +2154,7 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
                 step="0.5"
                 value={timerDuration}
                 disabled={isLampOn}
-                onChange={(e) => setTimerDuration(parseFloat(e.target.value))}
+                onChange={(e) => { noteAction('timer'); setTimerDuration(parseFloat(e.target.value)); }}
                 className="w-full accent-red-500 h-1.5 bg-neutral-800 rounded"
               />
             </div>
@@ -2185,6 +2325,7 @@ export const DurstEnlargerMode: React.FC<DurstEnlargerModeProps> = ({ scan, onEx
             selectedGrade={selectedGrade}
             aperture={aperture}
             isColorMode={isColorMode}
+            lastAction={lastAction}
             onClose={() => setShowTutorial(false)}
             onGoToSide={(side) => setActiveSide(side)}
           />
