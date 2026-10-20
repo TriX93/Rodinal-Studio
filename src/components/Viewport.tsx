@@ -2,6 +2,9 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { FilmScanItem, HardwareEngineState, InversionSettings } from '../types/film';
 import { webgpuPipeline } from '../engine/webgpu/webgpuPipeline';
 import { wasmEngine } from '../engine/wasm/wasmEngine';
+import { applyGeometry, clearGeometryCache } from '../engine/geometry/geometryRaster';
+import { createInverseDeltaTransform } from '../engine/geometry/geometryTransform';
+import { InteractiveCropOverlay } from './InteractiveCropOverlay';
 import { 
   ZoomIn, 
   ZoomOut, 
@@ -13,7 +16,9 @@ import {
   Search,
   Check,
   FlipHorizontal,
-  FlipVertical
+  FlipVertical,
+  Crop,
+  Compass
 } from 'lucide-react';
 
 interface ViewportProps {
@@ -26,6 +31,15 @@ interface ViewportProps {
   setIsEyedropperActive: (active: boolean) => void;
   onHistogramUpdate: (hist: { r: Uint32Array; g: Uint32Array; b: Uint32Array; luma: Uint32Array; maxCount: number }) => void;
 }
+
+/**
+ * Longest edge used for the interactive preview resample. Cropping, rotating and
+ * straightening require a real pixel pass, so the preview renders at a bounded
+ * resolution to keep slider dragging smooth; the exporters always run at full
+ * resolution. 4096 retains 1:1 detail for typical 35mm scans while halving the
+ * cost of a full-frame rotation.
+ */
+const PREVIEW_MAX_DIMENSION = 4096;
 
 export const Viewport: React.FC<ViewportProps> = ({
   scan,
@@ -54,9 +68,11 @@ export const Viewport: React.FC<ViewportProps> = ({
 
   // Split handle drag
   const [isDraggingSplit, setIsDraggingSplit] = useState<boolean>(false);
+  const [showHorizonGrid, setShowHorizonGrid] = useState<boolean>(false);
 
   // Load image element and feed into pipeline
   useEffect(() => {
+    clearGeometryCache();
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.src = scan.fullImageUrl;
@@ -74,23 +90,43 @@ export const Viewport: React.FC<ViewportProps> = ({
 
     const tStart = performance.now();
 
-    // Size canvas to native image
-    canvas.width = img.naturalWidth || 1500;
-    canvas.height = img.naturalHeight || 1000;
-
     // Use offscreen 2D canvas to get raw pixels
     const offCanvas = document.createElement('canvas');
-    offCanvas.width = canvas.width;
-    offCanvas.height = canvas.height;
+    offCanvas.width = img.naturalWidth || 1500;
+    offCanvas.height = img.naturalHeight || 1000;
     const offCtx = offCanvas.getContext('2d', { willReadFrequently: true });
     if (!offCtx) return;
 
     offCtx.drawImage(img, 0, 0);
-    const sourceImageData = offCtx.getImageData(0, 0, canvas.width, canvas.height);
+    const nativeImageData = offCtx.getImageData(0, 0, offCanvas.width, offCanvas.height);
+
+    // Carrier geometry stage: crop, quarter-turn, horizon straighten, flips.
+    // Non-destructive - returns `nativeImageData` untouched when neutral, and
+    // reuses its cached buffer while only colour settings change.
+    //
+    // While the crop tool is active the preview deliberately renders the WHOLE
+    // frame (crop removed, other geometry kept). Selecting a crop area is
+    // impossible if the viewport already shows only the current selection - you
+    // would be cropping inside the thing you are trying to redraw. The crop is
+    // still fully applied to the exported frame, where geometry runs at full
+    // resolution without this override.
+    const previewSettings = settings.crop?.enabled
+      ? { ...settings, crop: { ...settings.crop, enabled: false } }
+      : settings;
+
+    const sourceImageData = applyGeometry(nativeImageData, previewSettings, {
+      cacheKey: `${scan.id}#${settings.crop?.enabled ? 'crop-edit' : 'final'}`,
+      maxDimension: PREVIEW_MAX_DIMENSION
+    });
+
+    // Size canvas to the geometry output so preview matches the exported frame
+    canvas.width = sourceImageData.width;
+    canvas.height = sourceImageData.height;
 
     // Try WebGPU first if supported
     if (hardwareState.webgpuActive && webgpuPipeline.isAvailable) {
       try {
+        webgpuPipeline.syncCanvasSize();
         webgpuPipeline.uploadSourceImage(sourceImageData);
         webgpuPipeline.render(settings);
         
@@ -207,7 +243,10 @@ export const Viewport: React.FC<ViewportProps> = ({
 
   // Handle Pan & Zoom
   const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
+    // React registers `wheel` as a passive listener, so preventDefault() here
+    // would throw and abort the handler. Zoom only needs the delta, and page
+    // scrolling is already prevented by the viewport's overflow handling, so no
+    // preventDefault is needed.
     const zoomDelta = e.deltaY > 0 ? 0.9 : 1.1;
     setZoom(prev => Math.min(6.0, Math.max(0.2, prev * zoomDelta)));
   };
@@ -260,35 +299,68 @@ export const Viewport: React.FC<ViewportProps> = ({
     if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
-    let x = Math.floor(((e.clientX - rect.left) / rect.width) * canvas.width);
-    let y = Math.floor(((e.clientY - rect.top) / rect.height) * canvas.height);
-
-    if (settings.flipHorizontal) {
-      x = canvas.width - 1 - x;
-    }
-    if (settings.flipVertical) {
-      y = canvas.height - 1 - y;
-    }
+    // Canvas pixels already carry the carrier geometry, so screen -> canvas is
+    // a straight proportion with no flip correction required.
+    const x = Math.floor(((e.clientX - rect.left) / rect.width) * canvas.width);
+    const y = Math.floor(((e.clientY - rect.top) / rect.height) * canvas.height);
 
     if (x >= 0 && x < canvas.width && y >= 0 && y < canvas.height && rawImageRef.current) {
+      const img = rawImageRef.current;
       const offCanvas = document.createElement('canvas');
-      offCanvas.width = 1;
-      offCanvas.height = 1;
-      const offCtx = offCanvas.getContext('2d');
+      offCanvas.width = img.naturalWidth || canvas.width;
+      offCanvas.height = img.naturalHeight || canvas.height;
+      const offCtx = offCanvas.getContext('2d', { willReadFrequently: true });
       if (offCtx) {
-        offCtx.drawImage(rawImageRef.current, x, y, 1, 1, 0, 0, 1, 1);
-        const pixel = offCtx.getImageData(0, 0, 1, 1).data;
-        const rNorm = Number((pixel[0] / 255).toFixed(3));
-        const gNorm = Number((pixel[1] / 255).toFixed(3));
-        const bNorm = Number((pixel[2] / 255).toFixed(3));
-        const hex = `#${pixel[0].toString(16).padStart(2, '0')}${pixel[1].toString(16).padStart(2, '0')}${pixel[2].toString(16).padStart(2, '0')}`;
-        setSampledColor({ r: rNorm, g: gNorm, b: bNorm, hex });
+        offCtx.drawImage(img, 0, 0);
+        const nativeImageData = offCtx.getImageData(0, 0, offCanvas.width, offCanvas.height);
+        const geoSrc = applyGeometry(nativeImageData, settings.crop?.enabled
+          ? { ...settings, crop: { ...settings.crop, enabled: false } }
+          : settings, {
+          cacheKey: `${scan.id}#${settings.crop?.enabled ? 'crop-edit' : 'final'}`,
+          maxDimension: PREVIEW_MAX_DIMENSION
+        });
+
+        // Canvas and geometry output share dimensions, so indices align directly.
+        if (x < geoSrc.width && y < geoSrc.height) {
+          const idx = (y * geoSrc.width + x) * 4;
+          const r = geoSrc.data[idx];
+          const g = geoSrc.data[idx + 1];
+          const b = geoSrc.data[idx + 2];
+          const rNorm = Number((r / 255).toFixed(3));
+          const gNorm = Number((g / 255).toFixed(3));
+          const bNorm = Number((b / 255).toFixed(3));
+          const hex = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b
+            .toString(16)
+            .padStart(2, '0')}`;
+          setSampledColor({ r: rNorm, g: gNorm, b: bNorm, hex });
+        }
       }
     }
   };
 
-  const sampleFilmBaseFromClick = (e: React.MouseEvent) => {
-    if (sampledColor) {
+  /**
+   * Maps a screen-space crop drag delta into the crop rect's pre-geometry frame.
+   * The displayed image has already been rotated/flipped/straightened, so without
+   * this the handles would move in the wrong direction.
+   */
+  const mapCropDragDelta = useCallback(
+    (delta: { x: number; y: number }) => {
+      const nativeWidth = rawImageRef.current?.naturalWidth || scan.width || 1500;
+      const nativeHeight = rawImageRef.current?.naturalHeight || scan.height || 1000;
+      // The preview renders the uncropped frame while the crop tool is active,
+      // so the mapping must be built from the same (crop-free) geometry.
+      const motionSettings = settings.crop?.enabled
+        ? { ...settings, crop: { ...settings.crop, enabled: false } }
+        : settings;
+      // Both the input and output of this transform are normalized 0..1 deltas,
+      // so no pixel dimensions are required.
+      const inverseDelta = createInverseDeltaTransform(motionSettings, nativeWidth, nativeHeight);
+      return inverseDelta(delta);
+    },
+    [settings, scan.width, scan.height]
+  );
+
+  const sampleFilmBaseFromClick = (e: React.MouseEvent) => {    if (sampledColor) {
       onUpdateSettings({
         filmBase: {
           r: sampledColor.r,
@@ -313,19 +385,57 @@ export const Viewport: React.FC<ViewportProps> = ({
         isEyedropperActive ? 'cursor-crosshair' : isDragging ? 'cursor-grabbing' : 'cursor-grab'
       }`}
     >
+      {/* Horizon Leveling Grid Overlay */}
+      {(showHorizonGrid || (settings.straightenAngle || 0) !== 0) && (
+        <div className="absolute inset-0 pointer-events-none z-10 overflow-hidden">
+          <div
+            className="absolute inset-0 opacity-15"
+            style={{
+              backgroundImage:
+                'linear-gradient(to right, rgba(255,255,255,0.4) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.4) 1px, transparent 1px)',
+              backgroundSize: '48px 48px'
+            }}
+          />
+          {/* Central Horizontal Axis */}
+          <div className="absolute top-1/2 left-0 right-0 h-[1.5px] bg-gradient-to-r from-transparent via-amber-400 to-transparent shadow-[0_0_10px_rgba(251,191,36,0.6)] flex items-center justify-center">
+            <div className="bg-neutral-900/95 border border-amber-400 px-2.5 py-0.5 rounded-full text-[10px] font-mono text-amber-400 shadow-xl">
+              Livella Orizzonte: {(settings.straightenAngle || 0) > 0 ? `+${(settings.straightenAngle || 0).toFixed(1)}°` : `${(settings.straightenAngle || 0).toFixed(1)}°`}
+            </div>
+          </div>
+          {/* Central Vertical Axis */}
+          <div className="absolute top-0 bottom-0 left-1/2 w-[1px] bg-gradient-to-b from-transparent via-amber-400/40 to-transparent" />
+        </div>
+      )}
+
       {/* Viewport Canvas */}
       <div
         style={{
-          transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom}) rotate(${settings.rotation}deg) scaleX(${settings.flipHorizontal ? -1 : 1}) scaleY(${settings.flipVertical ? -1 : 1})`,
+          transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
           transformOrigin: 'center center',
           transition: isDragging ? 'none' : 'transform 0.05s ease-out'
         }}
         className="relative max-w-full max-h-full flex items-center justify-center shadow-2xl"
       >
-        <canvas
-          ref={canvasRef}
-          className="max-h-[78vh] w-auto object-contain border border-neutral-800 shadow-2xl"
-        />
+        {/* The overlay must be anchored to the canvas's own box, not to this
+            wrapper: the wrapper is a flex container that can be larger than the
+            letterboxed image, so an inset-0 overlay would misalign with the
+            visible frame and make all crop math wrong. This inner element hugs
+            the canvas exactly. */}
+        <div className="relative inline-flex">
+          <canvas
+            ref={canvasRef}
+            className="max-h-[78vh] w-auto object-contain border border-neutral-800 shadow-2xl"
+          />
+
+          {/* Interactive Crop Overlay */}
+          <InteractiveCropOverlay
+            crop={settings.crop}
+            onUpdateCrop={(newCrop) => onUpdateSettings({ crop: newCrop })}
+            scanWidth={scan.width}
+            scanHeight={scan.height}
+            mapDragDelta={mapCropDragDelta}
+          />
+        </div>
 
         {/* Split comparison line handle */}
         {settings.splitCompare && (
@@ -478,8 +588,57 @@ export const Viewport: React.FC<ViewportProps> = ({
         >
           <FlipVertical className="w-3.5 h-3.5" />
           <span className="text-[11px] font-medium hidden sm:inline">Flip V</span>
+
         </button>
 
+        <div className="w-[1px] h-4 bg-neutral-800 mx-1" />
+
+        {/* Crop Toggle Button */}
+        <button
+          onClick={() => {
+            // A full-frame rect is the disabled/unset state. `??` alone would
+            // keep 0/1 and seed an unmovable, ungrabbable box, so detect it.
+            const existing = settings.crop;
+            const isFullFrame =
+              !existing ||
+              (existing.x === 0 && existing.y === 0 && existing.width === 1 && existing.height === 1);
+            const nextEnabled = !existing?.enabled;
+            onUpdateSettings({
+              crop: {
+                enabled: nextEnabled,
+                x: nextEnabled && isFullFrame ? 0.05 : existing?.x ?? 0.05,
+                y: nextEnabled && isFullFrame ? 0.05 : existing?.y ?? 0.05,
+                width: nextEnabled && isFullFrame ? 0.9 : existing?.width ?? 0.9,
+                height: nextEnabled && isFullFrame ? 0.9 : existing?.height ?? 0.9,
+                aspectRatio: existing?.aspectRatio ?? 'free'
+              }
+            });
+          }}
+          className={`p-1.5 rounded hover:bg-neutral-800 transition-colors flex items-center gap-1.5 text-xs ${
+            settings.crop?.enabled ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40 font-semibold' : ''
+          }`}
+          title="Strumento ritaglio negativo (Crop)"
+        >
+          <Crop className="w-3.5 h-3.5" />
+          <span className="text-[11px] font-medium hidden sm:inline">Crop</span>
+        </button>
+
+        {/* Horizon Leveling Toggle Button */}
+        <button
+          onClick={() => setShowHorizonGrid(!showHorizonGrid)}
+          className={`p-1.5 rounded hover:bg-neutral-800 transition-colors flex items-center gap-1.5 text-xs ${
+            showHorizonGrid || (settings.straightenAngle || 0) !== 0
+              ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40 font-semibold'
+              : ''
+          }`}
+          title="Reticolo e allineamento orizzonte"
+        >
+          <Compass className="w-3.5 h-3.5" />
+          <span className="text-[11px] font-medium hidden sm:inline">
+            {(settings.straightenAngle || 0) !== 0 ? `${(settings.straightenAngle || 0).toFixed(1)}°` : 'Orizzonte'}
+          </span>
+        </button>
+        
         {/* Zoom Out */}
         <button
           onClick={() => setZoom(prev => Math.max(0.2, prev * 0.8))}

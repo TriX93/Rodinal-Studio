@@ -281,10 +281,33 @@ export class WebGPUPipeline {
   }
 
   /**
+   * Reconfigures the swap chain for the canvas's current size.
+   *
+   * Carrier geometry (crop/rotate/straighten) changes the canvas backing store
+   * on most edits, and the render pass draws into `getCurrentTexture()`. Calling
+   * this before a render keeps the swap chain in step with the geometry output.
+   */
+  public syncCanvasSize(): void {
+    if (!this.device || !this.canvasContext) return;
+    try {
+      const gpu = (navigator as unknown as { gpu: GPU }).gpu;
+      this.canvasContext.configure({
+        device: this.device,
+        format: gpu.getPreferredCanvasFormat(),
+        alphaMode: 'opaque'
+      });
+    } catch {
+      // Swallowed: the viewport falls back to the WASM path if GPU rendering fails.
+    }
+  }
+
+  /**
    * Upload image pixels to WebGPU texture
    */
   public uploadSourceImage(imageData: ImageData): void {
     if (!this.device || !this.pipeline || !this.sampler || !this.uniformBuffer) return;
+    // A zero-sized texture is invalid; guard against degenerate geometry output.
+    if (imageData.width < 1 || imageData.height < 1) return;
 
     if (this.currentTexture) {
       this.currentTexture.destroy();

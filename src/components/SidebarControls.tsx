@@ -2,7 +2,8 @@ import React from 'react';
 import { FilmScanItem, InversionSettings } from '../types/film';
 import { FILM_PRESETS } from '../engine/presets/filmPresets';
 import { CurvesEditor } from './CurvesEditor';
-import { Pipette, Sparkles, Sliders, RefreshCw, Layers, Film, Tag, Camera, RotateCw, FlipHorizontal, FlipVertical, Scale, Flame } from 'lucide-react';
+import { GeometryCropControls } from './GeometryCropControls';
+import { Pipette, Sparkles, Sliders, RefreshCw, Layers, Film, Tag, Camera, Scale, Flame } from 'lucide-react';
 
 interface SidebarControlsProps {
   scan: FilmScanItem;
@@ -337,48 +338,12 @@ export const SidebarControls: React.FC<SidebarControlsProps> = ({
               </div>
             </div>
 
-            {/* Carrier Orientation & Emulsion Alignment */}
-            <div className="bg-neutral-900/70 border border-neutral-800 rounded p-3 space-y-2">
-              <span className="text-[11px] font-mono text-amber-400 font-semibold tracking-wider block">
-                CARRIER ALIGNMENT &amp; ORIENTATION
-              </span>
-              <div className="grid grid-cols-3 gap-1.5 pt-0.5">
-                <button
-                  onClick={() => onUpdateSettings({ rotation: (settings.rotation + 90) % 360 })}
-                  className="flex items-center justify-center gap-1.5 py-1.5 px-2 rounded bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs transition-colors"
-                  title="Rotate 90 degrees [Shortcut: R]"
-                >
-                  <RotateCw className="w-3.5 h-3.5" />
-                  <span className="font-mono text-[11px]">{settings.rotation}°</span>
-                </button>
-
-                <button
-                  onClick={() => onUpdateSettings({ flipHorizontal: !settings.flipHorizontal })}
-                  className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded text-xs transition-colors ${
-                    settings.flipHorizontal
-                      ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40 font-semibold'
-                      : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200'
-                  }`}
-                  title="Flip Horizontal (Emulsion mirror correction) [Shortcut: H]"
-                >
-                  <FlipHorizontal className="w-3.5 h-3.5" />
-                  <span className="font-mono text-[11px]">Flip H</span>
-                </button>
-
-                <button
-                  onClick={() => onUpdateSettings({ flipVertical: !settings.flipVertical })}
-                  className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded text-xs transition-colors ${
-                    settings.flipVertical
-                      ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40 font-semibold'
-                      : 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200'
-                  }`}
-                  title="Flip Vertical (Carrier inversion correction) [Shortcut: V]"
-                >
-                  <FlipVertical className="w-3.5 h-3.5" />
-                  <span className="font-mono text-[11px]">Flip V</span>
-                </button>
-              </div>
-            </div>
+            {/* Carrier Geometry, Horizon Straighten & Crop Tool */}
+            <GeometryCropControls
+              scan={scan}
+              settings={settings}
+              onUpdateSettings={onUpdateSettings}
+            />
           </div>
         )}
 

@@ -11,6 +11,17 @@ export interface CurvePoint {
   y: number; // 0.0 - 1.0
 }
 
+export type CropAspectRatio = 'free' | 'original' | '3:2' | '1:1' | '4:3' | '16:9';
+
+export interface CropSettings {
+  enabled: boolean;
+  x: number; // 0.0 - 1.0 normalized
+  y: number; // 0.0 - 1.0 normalized
+  width: number; // 0.0 - 1.0 normalized
+  height: number; // 0.0 - 1.0 normalized
+  aspectRatio: CropAspectRatio;
+}
+
 export interface ChannelCurves {
   master: CurvePoint[];
   red: CurvePoint[];
@@ -60,8 +71,10 @@ export interface InversionSettings {
   splitCompare: boolean;
   splitPosition: number; // 0 - 100 percentage
   rotation: number; // 0, 90, 180, 270
+  straightenAngle: number; // -45.0 to +45.0 degrees fine horizon leveling
   flipHorizontal: boolean;
   flipVertical: boolean;
+  crop: CropSettings;
 }
 
 export interface ArchivalMetadata {

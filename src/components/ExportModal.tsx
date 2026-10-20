@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { ExportConfiguration, FilmScanItem, InversionSettings } from '../types/film';
 import { TiffWriter } from '../engine/export/tiffWriter';
 import { wasmEngine } from '../engine/wasm/wasmEngine';
+import { applyGeometry, clearGeometryCache } from '../engine/geometry/geometryRaster';
+import { getOutputSize } from '../engine/geometry/geometryTransform';
 import { X, Download, HardDrive, CheckCircle2, ShieldCheck, Loader2 } from 'lucide-react';
 
 interface ExportModalProps {
@@ -34,9 +36,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Calculate estimated file size
-  const targetWidth = Math.round(activeScan.width * config.scale);
-  const targetHeight = Math.round(activeScan.height * config.scale);
+  // Calculate estimated file size from the geometry-adjusted archival frame
+  const geoSize = getOutputSize(activeScan.settings, activeScan.width, activeScan.height);
+  const targetWidth = Math.max(1, Math.round(geoSize.width * config.scale));
+  const targetHeight = Math.max(1, Math.round(geoSize.height * config.scale));
   const estimatedBytes =
     config.format === 'tiff-16bit'
       ? targetWidth * targetHeight * 6 // 48-bit RGB uncompressed
@@ -55,7 +58,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         const item = scansToProcess[i];
         setExportProgress(Math.round(((i + 0.3) / scansToProcess.length) * 100));
 
-        // Load image to offscreen canvas
+        // Load image to offscreen canvas at native resolution
         const img = new Image();
         img.crossOrigin = 'anonymous';
         await new Promise<void>((resolve, reject) => {
@@ -64,34 +67,31 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           img.src = item.fullImageUrl;
         });
 
-        const offCanvas = document.createElement('canvas');
-        offCanvas.width = targetWidth;
-        offCanvas.height = targetHeight;
-        const offCtx = offCanvas.getContext('2d');
-        if (!offCtx) throw new Error('Canvas 2D context error');
+        const nativeCanvas = document.createElement('canvas');
+        nativeCanvas.width = img.naturalWidth || item.width;
+        nativeCanvas.height = img.naturalHeight || item.height;
+        const nativeCtx = nativeCanvas.getContext('2d', { willReadFrequently: true });
+        if (!nativeCtx) throw new Error('Canvas 2D context error');
 
-        offCtx.save();
-        if (item.settings.flipHorizontal || item.settings.flipVertical) {
-          offCtx.translate(
-            item.settings.flipHorizontal ? targetWidth : 0,
-            item.settings.flipVertical ? targetHeight : 0
-          );
-          offCtx.scale(
-            item.settings.flipHorizontal ? -1 : 1,
-            item.settings.flipVertical ? -1 : 1
-          );
-        }
-        offCtx.drawImage(img, 0, 0, targetWidth, targetHeight);
-        offCtx.restore();
+        nativeCtx.drawImage(img, 0, 0);
+        const nativeData = nativeCtx.getImageData(0, 0, nativeCanvas.width, nativeCanvas.height);
 
-        const sourceData = offCtx.getImageData(0, 0, targetWidth, targetHeight);
+        // Single carrier geometry pass at FULL resolution: crop, quarter-turn,
+        // horizon straighten and emulsion flips. Identical code path to the
+        // viewport preview, so exports match what was on screen.
+        clearGeometryCache();
+        const geoSrc = applyGeometry(nativeData, item.settings);
+
+        const frameWidth = Math.max(1, Math.round(geoSrc.width * config.scale));
+        const frameHeight = Math.max(1, Math.round(geoSrc.height * config.scale));
 
         setExportProgress(Math.round(((i + 0.7) / scansToProcess.length) * 100));
 
         if (config.format === 'tiff-16bit') {
-          // Generate 16-bit uncompressed TIFF master
+          // Generate 16-bit uncompressed TIFF master. TiffWriter re-samples the
+          // geometry-corrected frame to `config.scale`.
           const tiffBlob = TiffWriter.create16BitTiff(
-            sourceData,
+            geoSrc,
             item.settings,
             item.metadata,
             config
@@ -101,13 +101,20 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           const filename = `${baseName}_Inverted_${config.dpi}DPI_16bit.tiff`;
           TiffWriter.triggerDownload(tiffBlob, filename);
         } else {
-          // Process positive image onto canvas for High-Res JPEG
-          const positiveData = offCtx.createImageData(targetWidth, targetHeight);
+          // Process the positive at FULL geometry resolution first, so the
+          // inversion buffer always matches the pixel count it is told about.
+          const fullCanvas = document.createElement('canvas');
+          fullCanvas.width = geoSrc.width;
+          fullCanvas.height = geoSrc.height;
+          const fullCtx = fullCanvas.getContext('2d');
+          if (!fullCtx) throw new Error('Canvas 2D context error');
+
+          const positiveData = fullCtx.createImageData(geoSrc.width, geoSrc.height);
           wasmEngine.processNegativeInversion(
-            sourceData.data,
+            geoSrc.data,
             positiveData.data,
-            targetWidth,
-            targetHeight,
+            geoSrc.width,
+            geoSrc.height,
             {
               filmType: item.settings.filmType,
               baseR: item.settings.filmBase.r,
@@ -126,9 +133,17 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               highlightRecovery: item.settings.highlightRecovery
             }
           );
-          offCtx.putImageData(positiveData, 0, 0);
+          fullCtx.putImageData(positiveData, 0, 0);
 
-          const jpegBlob = await TiffWriter.createJpeg(offCanvas, config.jpegQuality);
+          // Apply the requested resolution scale on the way out (1:1 when 100%).
+          const outCanvas = document.createElement('canvas');
+          outCanvas.width = frameWidth;
+          outCanvas.height = frameHeight;
+          const outCtx = outCanvas.getContext('2d');
+          if (!outCtx) throw new Error('Canvas 2D context error');
+          outCtx.drawImage(fullCanvas, 0, 0, frameWidth, frameHeight);
+
+          const jpegBlob = await TiffWriter.createJpeg(outCanvas, config.jpegQuality);
           const baseName = item.filename.replace(/\.[^/.]+$/, '');
           const filename = `${baseName}_Inverted_Archival.jpg`;
           TiffWriter.triggerDownload(jpegBlob, filename);

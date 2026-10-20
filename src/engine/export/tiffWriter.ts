@@ -18,8 +18,10 @@ export class TiffWriter {
   ): Blob {
     const origWidth = sourceImageData.width;
     const origHeight = sourceImageData.height;
-    
-    // Scaling
+
+    // The caller hands us a frame that already carries the carrier geometry
+    // (crop, quarter-turn, straighten, flips), so dimensions come straight from
+    // the input - re-deriving them from `settings` would double-apply the crop.
     const width = Math.max(1, Math.round(origWidth * config.scale));
     const height = Math.max(1, Math.round(origHeight * config.scale));
 
@@ -156,13 +158,13 @@ export class TiffWriter {
 
     let writeIdx = 0;
     for (let y = 0; y < height; y++) {
-      const targetY = settings.flipVertical ? height - 1 - y : y;
-      const srcY = Math.min(origHeight - 1, Math.floor(targetY * yRatio));
+      // Source already carries crop/rotation/straighten/flip, so this is a pure
+      // resolution remap - no orientation maths belongs here anymore.
+      const srcY = Math.min(origHeight - 1, Math.floor(y * yRatio));
       const rowOffset = srcY * origWidth;
 
       for (let x = 0; x < width; x++) {
-        const targetX = settings.flipHorizontal ? width - 1 - x : x;
-        const srcX = Math.min(origWidth - 1, Math.floor(targetX * xRatio));
+        const srcX = Math.min(origWidth - 1, Math.floor(x * xRatio));
         const srcIdx = (rowOffset + srcX) * 4;
 
         let r = srcData[srcIdx] / 255.0;

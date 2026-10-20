@@ -179,6 +179,15 @@ export class NefParser {
       splitCompare: false,
       splitPosition: 50,
       rotation: 0,
+      straightenAngle: 0,
+      crop: {
+        enabled: false,
+        x: 0,
+        y: 0,
+        width: 1,
+        height: 1,
+        aspectRatio: 'free'
+      },
       flipHorizontal: false,
       flipVertical: false
     };
@@ -403,6 +412,15 @@ export class NefParser {
           splitCompare: false,
           splitPosition: 50,
           rotation: 0,
+      straightenAngle: 0,
+      crop: {
+        enabled: false,
+        x: 0,
+        y: 0,
+        width: 1,
+        height: 1,
+        aspectRatio: 'free'
+      },
           flipHorizontal: false,
           flipVertical: false
         }
@@ -465,6 +483,15 @@ export class NefParser {
           splitCompare: false,
           splitPosition: 50,
           rotation: 0,
+      straightenAngle: 0,
+      crop: {
+        enabled: false,
+        x: 0,
+        y: 0,
+        width: 1,
+        height: 1,
+        aspectRatio: 'free'
+      },
           flipHorizontal: false,
           flipVertical: false
         }
@@ -527,6 +554,15 @@ export class NefParser {
           splitCompare: false,
           splitPosition: 50,
           rotation: 0,
+      straightenAngle: 0,
+      crop: {
+        enabled: false,
+        x: 0,
+        y: 0,
+        width: 1,
+        height: 1,
+        aspectRatio: 'free'
+      },
           flipHorizontal: false,
           flipVertical: false
         }
@@ -589,6 +625,15 @@ export class NefParser {
           splitCompare: false,
           splitPosition: 50,
           rotation: 0,
+      straightenAngle: 0,
+      crop: {
+        enabled: false,
+        x: 0,
+        y: 0,
+        width: 1,
+        height: 1,
+        aspectRatio: 'free'
+      },
           flipHorizontal: false,
           flipVertical: false
         }
