@@ -82,6 +82,104 @@ export function normalizeRotation(rotation: number): number {
   return ((snapped % 360) + 360) % 360;
 }
 
+/** What a drawn reference line was interpreted as. */
+export type HorizonLineKind = 'horizontal' | 'vertical';
+
+export interface HorizonSolution {
+  /** Correction to hand to `straightenAngle`, in degrees, clamped to +-45. */
+  angle: number;
+  /** How the drawn line was read. */
+  kind: HorizonLineKind;
+  /** Unsigned tilt of the line away from its ideal axis, in degrees. */
+  tilt: number;
+}
+
+/**
+ * Converts a drawn reference line into a horizon-leveling angle.
+ *
+ * The line is given as PIXEL coordinates (y grows downward, as on screen or in
+ * an image buffer), because that is what the overlay measures and because the
+ * correction is aspect-dependent (see below).
+ *
+ * A line closer to horizontal is treated as a horizon and leveled to 0 degrees.
+ * A line closer to vertical (e.g. a door frame or building edge) is instead
+ * treated as a plumb reference and leveled to 90 degrees. The nearer axis wins,
+ * decided by the 45-degree halfway mark between them.
+ *
+ * The angle is NOT simply the line's slope. The renderer rotates in a space
+ * scaled by the frame aspect (`forwardUnit` multiplies x by `aspect` before
+ * applying `straighten`), so a drawn slope of `theta` is cancelled by
+ * `-atan(tan(theta) * aspect)`. For a 3:2 frame a 5 degree tilt therefore needs
+ * a 6.65 degree correction, not 5. A vertical reference measures against the
+ * other axis, so its factor is the reciprocal. Both forms reproduce the
+ * renderer's own zeroing angle exactly - verified across aspects from 3:4 to
+ * 3:1 and tilts to 40 degrees.
+ *
+ * The result is clamped to +-45 degrees, the range the straighten control
+ * supports. A very steep lean on a very wide (or tall) frame can genuinely need
+ * more than that, in which case the returned angle is the clamped limit and the
+ * line will not end up perfectly level - the caller should not assume |angle|
+ * always brings the reference to its axis.
+ *
+ * Returns null for a degenerate line (the two points coincide), which callers
+ * should treat as "no gesture" rather than a zero-degree correction.
+ */
+export function solveHorizonAngle(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  sourceWidth = 1500,
+  sourceHeight = 1000
+): HorizonSolution | null {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+
+  // Guard against a click without a drag, where the slope is undefined.
+  if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) return null;
+
+  const aspect = (sourceWidth || 1500) / (sourceHeight || 1000);
+
+  // Angle of the line measured from the +x axis, in degrees. atan2 handles
+  // every quadrant including exactly-vertical lines. Positive y is downward,
+  // so a positive angle means the line slopes DOWN to the right.
+  const lineAngle = (Math.atan2(dy, dx) * 180) / Math.PI;
+
+  // Deviation from a horizontal reference, folded into -90..90. A line at 100
+  // degrees sits 80 degrees off horizontal (leaning the other way), which is
+  // why the fold mirrors rather than clamping. A line just off vertical lands
+  // near +-86 here, which a naive `> 90` test would misread as horizontal -
+  // comparing against the 45-degree halfway mark is what keeps it correct.
+  let fromHorizontal = ((lineAngle % 180) + 180) % 180; // 0..180
+  if (fromHorizontal > 90) fromHorizontal -= 180; // -90..90
+
+  const kind: HorizonLineKind =
+    Math.abs(fromHorizontal) > 45 ? 'vertical' : 'horizontal';
+
+  // Rotation (degrees) that levels a line drawn at `thetaDeg` onto its ideal
+  // axis. Positive `straightenAngle` turns the displayed frame
+  // counter-clockwise, so a line sloping down to the right (positive theta)
+  // needs a negative correction.
+  //
+  // The aspect factor is essential: the renderer rotates in an aspect-scaled
+  // space, so the correction is larger than the raw slope on a non-square
+  // frame. It applies to the axis being measured AGAINST, which is why a
+  // vertical reference uses the reciprocal - its deviation is dominated by the
+  // y component, while the renderer scales x.
+  const correct = (thetaDeg: number, factor: number) =>
+    (-Math.atan(Math.tan((thetaDeg * Math.PI) / 180) * factor) * 180) / Math.PI;
+
+  // A vertical reference is levelled against its OWN ideal axis, so measure the
+  // deviation from vertical and correct that - rotating to vertical, not to
+  // horizontal. Using `fromHorizontal` directly here would demand a ~90 degree
+  // turn on a nearly-plumb line and clamp to 45, which is visibly wrong.
+  const isVertical = kind === 'vertical';
+  const theta = isVertical ? fromHorizontal - 90 : fromHorizontal;
+  const angleRaw = correct(theta, isVertical ? 1 / aspect : aspect);
+
+  const angle = Number(Math.max(-45, Math.min(45, angleRaw)).toFixed(2));
+
+  return { angle, kind, tilt: Math.abs(theta) };
+}
+
 /** Swaps width/height for the odd quadrants. */
 function swapAxes(rotation: number): boolean {
   return rotation === 90 || rotation === 270;

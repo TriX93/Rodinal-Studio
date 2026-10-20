@@ -5,6 +5,7 @@ import { wasmEngine } from '../engine/wasm/wasmEngine';
 import { applyGeometry, clearGeometryCache } from '../engine/geometry/geometryRaster';
 import { createInverseDeltaTransform } from '../engine/geometry/geometryTransform';
 import { InteractiveCropOverlay } from './InteractiveCropOverlay';
+import { HorizonDrawOverlay } from './HorizonDrawOverlay';
 import { 
   ZoomIn, 
   ZoomOut, 
@@ -18,7 +19,8 @@ import {
   FlipHorizontal,
   FlipVertical,
   Crop,
-  Compass
+  Compass,
+  Ruler
 } from 'lucide-react';
 
 interface ViewportProps {
@@ -69,6 +71,8 @@ export const Viewport: React.FC<ViewportProps> = ({
   // Split handle drag
   const [isDraggingSplit, setIsDraggingSplit] = useState<boolean>(false);
   const [showHorizonGrid, setShowHorizonGrid] = useState<boolean>(false);
+  /** Arms the "draw horizon" gesture: a drag on the image sets the angle. */
+  const [isHorizonDrawActive, setIsHorizonDrawActive] = useState<boolean>(false);
 
   // Load image element and feed into pipeline
   useEffect(() => {
@@ -435,6 +439,15 @@ export const Viewport: React.FC<ViewportProps> = ({
             scanHeight={scan.height}
             mapDragDelta={mapCropDragDelta}
           />
+
+          {/* Draw Horizon Overlay: inert unless the tool is armed. */}
+          <HorizonDrawOverlay
+            active={isHorizonDrawActive}
+            scanWidth={scan.width}
+            scanHeight={scan.height}
+            onApplyAngle={(angle) => onUpdateSettings({ straightenAngle: angle })}
+            onComplete={() => setIsHorizonDrawActive(false)}
+          />
         </div>
 
         {/* Split comparison line handle */}
@@ -603,6 +616,10 @@ export const Viewport: React.FC<ViewportProps> = ({
               !existing ||
               (existing.x === 0 && existing.y === 0 && existing.width === 1 && existing.height === 1);
             const nextEnabled = !existing?.enabled;
+            // The two viewport tools are mutually exclusive: arming crop
+            // disarms the draw-horizon gesture so their full-frame capture
+            // layers cannot compete for the same drag.
+            if (nextEnabled) setIsHorizonDrawActive(false);
             onUpdateSettings({
               crop: {
                 enabled: nextEnabled,
@@ -636,6 +653,35 @@ export const Viewport: React.FC<ViewportProps> = ({
           <Compass className="w-3.5 h-3.5" />
           <span className="text-[11px] font-medium hidden sm:inline">
             {(settings.straightenAngle || 0) !== 0 ? `${(settings.straightenAngle || 0).toFixed(1)}°` : 'Orizzonte'}
+          </span>
+        </button>
+
+        {/* Draw Horizon: arm the reference-line gesture. */}
+        <button
+          onClick={() => {
+            setIsHorizonDrawActive((prev) => {
+              const next = !prev;
+              // Arming clears the crop tool: both draw full-frame capture
+              // layers, and the crop overlay would otherwise swallow the start
+              // of the reference-line drag.
+              if (next && settings.crop?.enabled) {
+                onUpdateSettings({
+                  crop: { ...settings.crop, enabled: false }
+                });
+              }
+              return next;
+            });
+          }}
+          className={`p-1.5 rounded hover:bg-neutral-800 transition-colors flex items-center gap-1.5 text-xs ${
+            isHorizonDrawActive
+              ? 'bg-amber-400 text-neutral-950 font-bold shadow'
+              : 'text-neutral-200'
+          }`}
+          title="Traccia l'orizzonte: trascina una linea sullo orizzonte o su un bordo verticale"
+        >
+          <Ruler className="w-3.5 h-3.5" />
+          <span className="text-[11px] font-medium hidden sm:inline">
+            {isHorizonDrawActive ? 'Traccia…' : 'Traccia Orizzonte'}
           </span>
         </button>
         
